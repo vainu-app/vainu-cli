@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from vainu_cli.common import AsyncJobState, DEFAULT_BASE_URL, JWT_REFRESH_ENDPOINT_PATH
+from vainu_cli.common import DEFAULT_BASE_URL, JWT_REFRESH_ENDPOINT_PATH, AsyncJobState
 
 logger = logging.getLogger(__name__)
 

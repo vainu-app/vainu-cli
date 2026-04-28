@@ -60,8 +60,7 @@ def _make_sync_client(config: Config) -> SyncBaseClient:
     if config.auth_method == "jwt":
         if not config.jwt_token:
             raise click.ClickException(
-                "JWT authentication requires --jwt-token "
-                "(or VAINU_JWT_REFRESH_TOKEN)."
+                "JWT authentication requires --jwt-token (or VAINU_JWT_REFRESH_TOKEN)."
             )
         return VainuJWTSyncClient(
             refresh_token=config.jwt_token,
@@ -89,8 +88,7 @@ def _make_async_client(config: Config) -> AsyncBaseClient:
     if config.auth_method == "jwt":
         if not config.jwt_token:
             raise click.ClickException(
-                "JWT authentication requires --jwt-token "
-                "(or VAINU_JWT_REFRESH_TOKEN)."
+                "JWT authentication requires --jwt-token (or VAINU_JWT_REFRESH_TOKEN)."
             )
         return VainuJWTAPIClient(
             refresh_token=config.jwt_token,
