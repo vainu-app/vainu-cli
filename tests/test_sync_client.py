@@ -12,6 +12,7 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     JWT_REFRESH_URL,
+    JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
 )
@@ -222,18 +223,18 @@ class TestVainuOAuthSyncClientTokenManagement:
 class TestVainuJWTSyncClientTokenManagement:
     @resp.activate
     def test_fetches_token_on_first_request(self):
-        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
 
         client = VainuJWTSyncClient(refresh_token="refresh-token")
         client.companies(payload={"filter": {}})
 
         token_call = resp.calls[0]
-        assert "refresh_token" in token_call.request.body
+        assert b"refresh" in token_call.request.body
 
     @resp.activate
     def test_caches_token_on_second_request(self):
-        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
 
@@ -246,9 +247,9 @@ class TestVainuJWTSyncClientTokenManagement:
 
     @resp.activate
     def test_refreshes_expired_token(self):
-        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
-        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
 
         client = VainuJWTSyncClient(refresh_token="refresh-token")
@@ -261,7 +262,7 @@ class TestVainuJWTSyncClientTokenManagement:
 
     @resp.activate
     def test_bearer_token_sent_in_header(self):
-        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
 
         client = VainuJWTSyncClient(refresh_token="refresh-token")

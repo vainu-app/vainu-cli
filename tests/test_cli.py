@@ -146,7 +146,7 @@ class TestCompaniesSearch:
         resp.add(
             resp.POST,
             JWT_REFRESH_URL,
-            json={"access_token": "jwt-access", "token_type": "Bearer", "expires_in": 3600},
+            json={"access": "jwt-access", "expires_in": 3600},
         )
         resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
 

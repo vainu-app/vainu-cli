@@ -39,6 +39,11 @@ OAUTH_TOKEN_RESPONSE = {
     "expires_in": 3600,
 }
 
+JWT_TOKEN_RESPONSE = {
+    "access": "test-access-token",
+    "expires_in": 3600,
+}
+
 
 @pytest.fixture
 def runner() -> CliRunner:
