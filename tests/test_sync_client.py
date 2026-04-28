@@ -11,6 +11,7 @@ from conftest import (
     ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
+    JWT_REFRESH_URL,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
 )
@@ -18,6 +19,7 @@ from conftest import (
 from vainu_cli._sync_client import (
     AsyncResult,
     VainuAPIKeySyncClient,
+    VainuJWTSyncClient,
     VainuOAuthSyncClient,
 )
 
@@ -208,6 +210,61 @@ class TestVainuOAuthSyncClientTokenManagement:
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
 
         client = VainuOAuthSyncClient(client_id="id", client_secret="secret")
+        client.companies(payload={"filter": {}})
+
+        companies_call = resp.calls[1]
+        assert companies_call.request.headers["Authorization"] == "Bearer test-access-token"
+
+
+# ── VainuJWTSyncClient ───────────────────────────────────────────────────────
+
+
+class TestVainuJWTSyncClientTokenManagement:
+    @resp.activate
+    def test_fetches_token_on_first_request(self):
+        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        client = VainuJWTSyncClient(refresh_token="refresh-token")
+        client.companies(payload={"filter": {}})
+
+        token_call = resp.calls[0]
+        assert "refresh_token" in token_call.request.body
+
+    @resp.activate
+    def test_caches_token_on_second_request(self):
+        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        client = VainuJWTSyncClient(refresh_token="refresh-token")
+        client.companies(payload={"filter": {}})
+        client.companies(payload={"filter": {}})
+
+        token_calls = [c for c in resp.calls if JWT_REFRESH_URL in c.request.url]
+        assert len(token_calls) == 1
+
+    @resp.activate
+    def test_refreshes_expired_token(self):
+        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        client = VainuJWTSyncClient(refresh_token="refresh-token")
+        client.companies(payload={"filter": {}})
+        client._token_expires_at = time.time() - 1
+        client.companies(payload={"filter": {}})
+
+        token_calls = [c for c in resp.calls if JWT_REFRESH_URL in c.request.url]
+        assert len(token_calls) == 2
+
+    @resp.activate
+    def test_bearer_token_sent_in_header(self):
+        resp.add(resp.POST, JWT_REFRESH_URL, json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        client = VainuJWTSyncClient(refresh_token="refresh-token")
         client.companies(payload={"filter": {}})
 
         companies_call = resp.calls[1]

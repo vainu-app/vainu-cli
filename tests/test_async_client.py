@@ -13,6 +13,7 @@ from conftest import (
     ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
+    JWT_REFRESH_URL,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
 )
@@ -20,6 +21,7 @@ from conftest import (
 from vainu_cli._async_client import (
     AsyncResult,
     VainuAPIKeyClient,
+    VainuJWTAPIClient,
     VainuOAuthAPIClient,
 )
 
@@ -225,6 +227,77 @@ class TestVainuOAuthAPIClientTokenManagement:
         await client.close()
 
         token_calls = [c for c in respx.calls if "/oauth/token/" in str(c.request.url)]
+        assert len(token_calls) == 2
+
+
+# ── VainuJWTAPIClient ────────────────────────────────────────────────────────
+
+
+class TestVainuJWTAPIClientTokenManagement:
+    @respx.mock
+    async def test_fetches_token_on_first_request(self):
+        respx.post(JWT_REFRESH_URL).mock(
+            return_value=httpx.Response(200, json=OAUTH_TOKEN_RESPONSE)
+        )
+        respx.post(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+
+        client = VainuJWTAPIClient(refresh_token="refresh-token")
+        await client.companies(payload={"filter": {}})
+        await client.close()
+
+        token_calls = [c for c in respx.calls if JWT_REFRESH_URL in str(c.request.url)]
+        assert len(token_calls) == 1
+
+    @respx.mock
+    async def test_caches_token_on_second_request(self):
+        respx.post(JWT_REFRESH_URL).mock(
+            return_value=httpx.Response(200, json=OAUTH_TOKEN_RESPONSE)
+        )
+        respx.post(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+
+        client = VainuJWTAPIClient(refresh_token="refresh-token")
+        await client.companies(payload={"filter": {}})
+        await client.companies(payload={"filter": {}})
+        await client.close()
+
+        token_calls = [c for c in respx.calls if JWT_REFRESH_URL in str(c.request.url)]
+        assert len(token_calls) == 1
+
+    @respx.mock
+    async def test_bearer_token_in_header(self):
+        respx.post(JWT_REFRESH_URL).mock(
+            return_value=httpx.Response(200, json=OAUTH_TOKEN_RESPONSE)
+        )
+        route = respx.post(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+
+        client = VainuJWTAPIClient(refresh_token="refresh-token")
+        await client.companies(payload={"filter": {}})
+        await client.close()
+
+        assert route.calls[0].request.headers["Authorization"] == "Bearer test-access-token"
+
+    @respx.mock
+    async def test_refreshes_expired_token(self):
+        respx.post(JWT_REFRESH_URL).mock(
+            return_value=httpx.Response(200, json=OAUTH_TOKEN_RESPONSE)
+        )
+        respx.post(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+
+        client = VainuJWTAPIClient(refresh_token="refresh-token")
+        await client.companies(payload={"filter": {}})
+        client._token_expires_at = time.time() - 1
+        await client.companies(payload={"filter": {}})
+        await client.close()
+
+        token_calls = [c for c in respx.calls if JWT_REFRESH_URL in str(c.request.url)]
         assert len(token_calls) == 2
 
 

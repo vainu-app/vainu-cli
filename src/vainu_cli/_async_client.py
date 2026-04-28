@@ -6,12 +6,14 @@ import http
 import logging
 import time
 from dataclasses import dataclass
+from urllib.parse import urljoin
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.vainu.io/api"
+_JWT_REFRESH_ENDPOINT_PATH = "/token_authentication/refresh/"
 
 
 class AsyncJobState(enum.StrEnum):
@@ -185,7 +187,7 @@ class VainuAPIKeyClient(VainuAPIBaseClient):
 
 
 class VainuJWTAPIClient(VainuAPIBaseClient):
-    """Async client using JWT refresh tokens (not yet implemented)."""
+    """Async client with automatic JWT refresh token exchange."""
 
     def __init__(self, refresh_token: str, base_url: str = DEFAULT_BASE_URL) -> None:
         super().__init__(base_url=base_url, timeout=120)
@@ -193,15 +195,28 @@ class VainuJWTAPIClient(VainuAPIBaseClient):
             raise ValueError("refresh_token must not be empty.")
         self.jwt_token = refresh_token
         self._access_token: str | None = None
+        self._token_expires_at: float = 0
 
     async def get_headers(self) -> dict:
         await self._ensure_access_token()
         return {"Authorization": f"Bearer {self._access_token}"}
 
     async def _ensure_access_token(self) -> None:
-        raise NotImplementedError(
-            "JWT token refresh logic needs to be implemented based on your auth setup."
+        """Fetch a new access token if missing or expiring within 60 seconds."""
+        if self._access_token and time.time() < self._token_expires_at - 60:
+            return
+        refresh_url = urljoin(
+            f"{self._base_url.rstrip('/')}/",
+            _JWT_REFRESH_ENDPOINT_PATH.lstrip("/"),
         )
+        response = await self._http.post(
+            refresh_url,
+            json={"refresh": self.jwt_token},
+        )
+        response.raise_for_status()
+        data = response.json()
+        self._access_token = data["access"]
+        self._token_expires_at = time.time() + int(data.get("expires_in", 3600))
 
 
 class VainuOAuthAPIClient(VainuAPIBaseClient):

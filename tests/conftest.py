@@ -4,6 +4,7 @@ import pytest
 from click.testing import CliRunner
 
 BASE_URL = "https://api.vainu.io/api"
+JWT_REFRESH_URL = "https://api.vainu.io/api/token_authentication/refresh/"
 
 COMPANIES_RESPONSE = {
     "result": [
