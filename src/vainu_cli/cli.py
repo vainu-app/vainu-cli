@@ -174,7 +174,7 @@ def main(
     \b
     Quick start:
         export VAINU_API_KEY=your-key
-        vainu companies search --query "?country=FI&business_id=FI01320292"
+        vainu companies --query "?country=FI&business_id=FI01320292"
     """
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -194,12 +194,7 @@ def main(
 # ── companies ────────────────────────────────────────────────────────────────
 
 
-@main.group()
-def companies() -> None:
-    """Search and export company data."""
-
-
-@companies.command("search")
+@main.command("companies")
 @click.option("--query", default=None, help="Query string (e.g. '?country=FI').")
 @click.option(
     "--payload",
@@ -246,7 +241,7 @@ def companies_search(
     _write_output(result, output)
 
 
-@companies.command("export")
+@main.command("companies-async")
 @click.option("--query", default=None, help="Query string (e.g. '?country=FI').")
 @click.option(
     "--payload",
@@ -297,12 +292,7 @@ def companies_export(
 # ── organizations ────────────────────────────────────────────────────────────
 
 
-@main.group()
-def organizations() -> None:
-    """Search and export organization data."""
-
-
-@organizations.command("search")
+@main.command("organizations")
 @click.option(
     "--payload",
     "payload_path",
@@ -343,7 +333,7 @@ def organizations_search(
     _write_output(result, output)
 
 
-@organizations.command("export")
+@main.command("organizations-async")
 @click.option(
     "--payload",
     "payload_path",

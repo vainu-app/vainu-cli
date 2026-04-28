@@ -38,13 +38,13 @@ export VAINU_API_KEY=your-api-key
 Search for a company:
 
 ```bash
-vainu companies search --query "?country=FI&business_id=FI01320292"
+vainu companies --query "?country=FI&business_id=FI01320292"
 ```
 
 Export a large dataset to a file:
 
 ```bash
-vainu companies export \
+vainu companies-async \
   --query "?country=FI" \
   --format jsonl \
   --output finnish_companies.jsonl
@@ -54,7 +54,7 @@ Search organizations with a JSON payload:
 
 ```bash
 echo '{"query": {"country": "SE"}}' | \
-  vainu organizations search --payload -
+  vainu organizations --payload -
 ```
 
 ### Python library
@@ -103,10 +103,10 @@ finally:
 
 ```bash
 export VAINU_API_KEY=your-api-key
-vainu companies search --query "?country=FI"
+vainu companies --query "?country=FI"
 
 # or pass inline
-vainu --api-key your-api-key companies search --query "?country=FI"
+vainu --api-key your-api-key companies --query "?country=FI"
 ```
 
 ### OAuth 2.0 client credentials
@@ -114,7 +114,7 @@ vainu --api-key your-api-key companies search --query "?country=FI"
 ```bash
 export VAINU_CLIENT_ID=your-client-id
 export VAINU_CLIENT_SECRET=your-client-secret
-vainu --auth-method oauth companies search --payload payload.json
+vainu --auth-method oauth companies --payload payload.json
 ```
 
 Tokens are fetched and cached automatically; expired tokens are refreshed transparently.
@@ -137,11 +137,13 @@ Options:
   --version                         Show version and exit
 
 Commands:
-  companies      Search and export company data
-  organizations  Search and export organization data
+  companies            Fetch company data
+  companies-async      Export company data via async job
+  organizations        Fetch organization data
+  organizations-async  Export organization data via async job
 ```
 
-### `vainu companies search`
+### `vainu companies`
 
 ```
 --query TEXT         Query string, e.g. "?country=FI"
@@ -150,7 +152,7 @@ Commands:
 --output FILE        Write to file instead of stdout
 ```
 
-### `vainu companies export`
+### `vainu companies-async`
 
 Submits an async export job, polls until complete, and downloads the result.
 
@@ -163,7 +165,7 @@ Submits an async export job, polls until complete, and downloads the result.
 --timeout INT        Max wait seconds (default: 14400)
 ```
 
-### `vainu organizations search` / `vainu organizations export`
+### `vainu organizations` / `vainu organizations-async`
 
 Same options as the company commands (organizations always use POST with a JSON payload).
 
