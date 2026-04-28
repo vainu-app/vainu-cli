@@ -1,7 +1,6 @@
 """Async Vainu API client (httpx-based)."""
 
 import asyncio
-import enum
 import http
 import logging
 import time
@@ -10,20 +9,9 @@ from urllib.parse import urljoin
 
 import httpx
 
+from vainu_cli.common import AsyncJobState, DEFAULT_BASE_URL, JWT_REFRESH_ENDPOINT_PATH
+
 logger = logging.getLogger(__name__)
-
-DEFAULT_BASE_URL = "https://api.vainu.io/api"
-_JWT_REFRESH_ENDPOINT_PATH = "/token_authentication/refresh/"
-
-
-class AsyncJobState(enum.StrEnum):
-    ACCEPTED = "accepted"
-    COMPLETED = "completed"
-    FAILURE = "failure"
-    PARTIAL_FAILURE_COMPLETE = "partial_failure_complete"
-    PARTIAL_FAILURE_INCOMPLETE = "partial_failure_incomplete"
-    PROCESS = "process"
-    STOPPED = "stopped"
 
 
 @dataclass
@@ -207,7 +195,7 @@ class VainuJWTAPIClient(VainuAPIBaseClient):
             return
         refresh_url = urljoin(
             f"{self._base_url.rstrip('/')}/",
-            _JWT_REFRESH_ENDPOINT_PATH.lstrip("/"),
+            JWT_REFRESH_ENDPOINT_PATH.lstrip("/"),
         )
         response = await self._http.post(
             refresh_url,
