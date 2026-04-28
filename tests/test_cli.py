@@ -29,7 +29,7 @@ class TestCompaniesSearch:
         resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
         result = runner.invoke(
             main,
-            ["companies", "search", "--query", "?country=FI"],
+            ["companies", "--query", "?country=FI"],
             env={"VAINU_API_KEY": "env-key"},
             catch_exceptions=False,
         )
@@ -42,7 +42,7 @@ class TestCompaniesSearch:
         resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
         result = runner.invoke(
             main,
-            ["--api-key", "flag-key", "companies", "search", "--query", "?country=FI"],
+            ["--api-key", "flag-key", "companies", "--query", "?country=FI"],
             catch_exceptions=False,
         )
         assert result.exit_code == 0
@@ -57,7 +57,6 @@ class TestCompaniesSearch:
                 "--api-key",
                 "test-key",
                 "companies",
-                "search",
                 "--query",
                 "?country=FI",
                 "--output",
@@ -74,7 +73,7 @@ class TestCompaniesSearch:
         resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
         result = runner.invoke(
             main,
-            ["--api-key", "test-key", "companies", "search", "--payload", "-"],
+            ["--api-key", "test-key", "companies", "--payload", "-"],
             input='{"filter": {}}',
             catch_exceptions=False,
         )
@@ -91,7 +90,6 @@ class TestCompaniesSearch:
                 "--api-key",
                 "test-key",
                 "companies",
-                "search",
                 "--payload",
                 str(payload_file),
             ],
@@ -106,7 +104,6 @@ class TestCompaniesSearch:
                 "--api-key",
                 "test-key",
                 "companies",
-                "search",
                 "--query",
                 "?country=FI",
                 "--payload",
@@ -119,7 +116,7 @@ class TestCompaniesSearch:
     def test_missing_auth_fails_with_helpful_message(self, runner):
         result = runner.invoke(
             main,
-            ["companies", "search", "--query", "?country=FI"],
+            ["companies", "--query", "?country=FI"],
             env={},
         )
         assert result.exit_code != 0
@@ -128,7 +125,7 @@ class TestCompaniesSearch:
     def test_jwt_not_implemented(self, runner):
         result = runner.invoke(
             main,
-            ["--auth-method", "jwt", "companies", "search", "--query", "?country=FI"],
+            ["--auth-method", "jwt", "companies", "--query", "?country=FI"],
         )
         assert result.exit_code != 0
         assert "not yet implemented" in result.output
@@ -136,14 +133,14 @@ class TestCompaniesSearch:
     def test_neither_query_nor_payload_fails(self, runner):
         result = runner.invoke(
             main,
-            ["--api-key", "test-key", "companies", "search"],
+            ["--api-key", "test-key", "companies"],
         )
         assert result.exit_code != 0
 
     def test_invalid_json_payload_fails(self, runner):
         result = runner.invoke(
             main,
-            ["--api-key", "test-key", "companies", "search", "--payload", "-"],
+            ["--api-key", "test-key", "companies", "--payload", "-"],
             input="not valid json",
         )
         assert result.exit_code != 0
@@ -171,8 +168,7 @@ class TestCompaniesExport:
                 [
                     "--api-key",
                     "test-key",
-                    "companies",
-                    "export",
+                    "companies-async",
                     "--query",
                     "?country=FI",
                     "--output",
@@ -187,7 +183,7 @@ class TestCompaniesExport:
     def test_export_requires_output(self, runner):
         result = runner.invoke(
             main,
-            ["--api-key", "test-key", "companies", "export", "--query", "?country=FI"],
+            ["--api-key", "test-key", "companies-async", "--query", "?country=FI"],
         )
         assert result.exit_code != 0
         assert "output" in result.output.lower() or "Missing option" in result.output
@@ -202,7 +198,7 @@ class TestOrganizationsSearch:
         resp.add(resp.POST, f"{BASE_URL}/v3/organizations/", json=ORGANIZATIONS_RESPONSE)
         result = runner.invoke(
             main,
-            ["--api-key", "test-key", "organizations", "search", "--payload", "-"],
+            ["--api-key", "test-key", "organizations", "--payload", "-"],
             input='{"query": "vainu"}',
             catch_exceptions=False,
         )
@@ -213,7 +209,7 @@ class TestOrganizationsSearch:
     def test_organizations_search_requires_payload(self, runner):
         result = runner.invoke(
             main,
-            ["--api-key", "test-key", "organizations", "search"],
+            ["--api-key", "test-key", "organizations"],
         )
         assert result.exit_code != 0
 
@@ -251,7 +247,6 @@ class TestOAuthCLI:
                 "--client-secret",
                 "my-secret",
                 "companies",
-                "search",
                 "--payload",
                 "-",
             ],
@@ -267,7 +262,6 @@ class TestOAuthCLI:
                 "--auth-method",
                 "oauth",
                 "companies",
-                "search",
                 "--query",
                 "?country=FI",
             ],
