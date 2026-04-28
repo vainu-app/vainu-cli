@@ -52,6 +52,7 @@ class AsyncResult:
 
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
+    ASYNC_POLL_MAX_RETRIES = 5
 
     def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: int = 120) -> None:
         self._base_url = base_url
@@ -84,8 +85,29 @@ class VainuAPIBaseClient:
             json=payload if isinstance(payload, dict) else None,
         )
         link_to_poll = get_async_job.json().get("link")
+        consecutive_errors = 0
         while True:
-            poll_response = await self.request(method=http.HTTPMethod.GET, path=link_to_poll)
+            try:
+                poll_response = await self.request(method=http.HTTPMethod.GET, path=link_to_poll)
+                consecutive_errors = 0
+            except (
+                httpx.RemoteProtocolError,
+                httpx.ConnectError,
+                httpx.ReadError,
+                httpx.TimeoutException,
+            ) as exc:
+                consecutive_errors += 1
+                if consecutive_errors > self.ASYNC_POLL_MAX_RETRIES:
+                    raise
+                logger.warning(
+                    "Poll request failed (%s/%s): %s — retrying in %ss",
+                    consecutive_errors,
+                    self.ASYNC_POLL_MAX_RETRIES,
+                    exc,
+                    self.ASYNC_POLL_INTERVAL,
+                )
+                await asyncio.sleep(self.ASYNC_POLL_INTERVAL)
+                continue
             poll_data = poll_response.json()
             status = AsyncJobState(poll_data.get("state"))
             progress = poll_data.get("progress", 0)
