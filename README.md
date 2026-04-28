@@ -21,6 +21,16 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv add vainu-cli
 ```
 
+Or directly from GitHub:
+
+```bash
+pip install git+https://github.com/vainu-app/vainu-cli.git
+```
+
+```bash
+uv add git+https://github.com/vainu-app/vainu-cli.git
+```
+
 Requires Python 3.11+.
 
 ---
