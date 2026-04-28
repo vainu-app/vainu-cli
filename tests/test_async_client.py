@@ -237,9 +237,7 @@ class TestVainuOAuthAPIClientTokenManagement:
 class TestVainuJWTAPIClientTokenManagement:
     @respx.mock
     async def test_fetches_token_on_first_request(self):
-        respx.post(JWT_REFRESH_URL).mock(
-            return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE)
-        )
+        respx.post(JWT_REFRESH_URL).mock(return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE))
         respx.post(f"{BASE_URL}/v2/companies/").mock(
             return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
         )
@@ -253,9 +251,7 @@ class TestVainuJWTAPIClientTokenManagement:
 
     @respx.mock
     async def test_caches_token_on_second_request(self):
-        respx.post(JWT_REFRESH_URL).mock(
-            return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE)
-        )
+        respx.post(JWT_REFRESH_URL).mock(return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE))
         respx.post(f"{BASE_URL}/v2/companies/").mock(
             return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
         )
@@ -270,9 +266,7 @@ class TestVainuJWTAPIClientTokenManagement:
 
     @respx.mock
     async def test_bearer_token_in_header(self):
-        respx.post(JWT_REFRESH_URL).mock(
-            return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE)
-        )
+        respx.post(JWT_REFRESH_URL).mock(return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE))
         route = respx.post(f"{BASE_URL}/v2/companies/").mock(
             return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
         )
@@ -285,9 +279,7 @@ class TestVainuJWTAPIClientTokenManagement:
 
     @respx.mock
     async def test_refreshes_expired_token(self):
-        respx.post(JWT_REFRESH_URL).mock(
-            return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE)
-        )
+        respx.post(JWT_REFRESH_URL).mock(return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE))
         respx.post(f"{BASE_URL}/v2/companies/").mock(
             return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
         )

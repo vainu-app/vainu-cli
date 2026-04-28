@@ -6,14 +6,16 @@ from vainu_cli._async_client import (
     VainuJWTAPIClient,
     VainuOAuthAPIClient,
 )
-from vainu_cli.common import AsyncJobState
 from vainu_cli._sync_client import (
     AsyncResult as SyncAsyncResult,
+)
+from vainu_cli._sync_client import (
     VainuAPIKeySyncClient,
     VainuJWTSyncClient,
     VainuOAuthSyncClient,
 )
 from vainu_cli._version import __version__
+from vainu_cli.common import AsyncJobState
 
 SyncAsyncJobState = AsyncJobState
 
