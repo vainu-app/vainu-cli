@@ -148,6 +148,7 @@ Commands:
 ```
 --query TEXT         Query string, e.g. "?country=FI"
 --payload FILE/-     JSON payload file or "-" for stdin
+--payload-path FILE/-
 --format             json | csv | jsonl  (default: json)
 --output FILE        Write to file instead of stdout
 ```
@@ -159,6 +160,7 @@ Submits an async export job, polls until complete, and downloads the result.
 ```
 --query TEXT         Query string
 --payload FILE/-     JSON payload file or "-" for stdin
+--payload-path FILE/-
 --format             json | csv | jsonl  (default: json)
 --output FILE        Output file (required)
 --poll-interval INT  Polling interval in seconds (default: 3)
@@ -168,6 +170,9 @@ Submits an async export job, polls until complete, and downloads the result.
 ### `vainu organizations` / `vainu organizations-async`
 
 Same options as the company commands (organizations always use POST with a JSON payload).
+
+`organizations` and `organizations-async` also accept `--payload-path` as an alias for
+`--payload`.
 
 ---
 

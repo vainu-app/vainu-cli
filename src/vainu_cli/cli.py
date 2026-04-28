@@ -13,6 +13,7 @@ from vainu_cli._async_client import (
 )
 from vainu_cli._async_client import (
     VainuAPIKeyClient,
+    VainuJWTAPIClient,
     VainuOAuthAPIClient,
 )
 from vainu_cli._sync_client import (
@@ -20,6 +21,7 @@ from vainu_cli._sync_client import (
 )
 from vainu_cli._sync_client import (
     VainuAPIKeySyncClient,
+    VainuJWTSyncClient,
     VainuOAuthSyncClient,
 )
 from vainu_cli._version import __version__
@@ -56,7 +58,15 @@ def _make_sync_client(config: Config) -> SyncBaseClient:
             base_url=config.base_url,
         )
     if config.auth_method == "jwt":
-        raise click.ClickException("JWT authentication is not yet implemented.")
+        if not config.jwt_token:
+            raise click.ClickException(
+                "JWT authentication requires --jwt-token "
+                "(or VAINU_JWT_REFRESH_TOKEN)."
+            )
+        return VainuJWTSyncClient(
+            refresh_token=config.jwt_token,
+            base_url=config.base_url,
+        )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
 
@@ -77,7 +87,15 @@ def _make_async_client(config: Config) -> AsyncBaseClient:
             base_url=config.base_url,
         )
     if config.auth_method == "jwt":
-        raise click.ClickException("JWT authentication is not yet implemented.")
+        if not config.jwt_token:
+            raise click.ClickException(
+                "JWT authentication requires --jwt-token "
+                "(or VAINU_JWT_REFRESH_TOKEN)."
+            )
+        return VainuJWTAPIClient(
+            refresh_token=config.jwt_token,
+            base_url=config.base_url,
+        )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
 
@@ -198,6 +216,7 @@ def main(
 @click.option("--query", default=None, help="Query string (e.g. '?country=FI').")
 @click.option(
     "--payload",
+    "--payload-path",
     "payload_path",
     default=None,
     type=click.Path(),
@@ -245,6 +264,7 @@ def companies_search(
 @click.option("--query", default=None, help="Query string (e.g. '?country=FI').")
 @click.option(
     "--payload",
+    "--payload-path",
     "payload_path",
     default=None,
     type=click.Path(),
@@ -295,6 +315,7 @@ def companies_export(
 @main.command("organizations")
 @click.option(
     "--payload",
+    "--payload-path",
     "payload_path",
     required=True,
     type=click.Path(),
@@ -336,6 +357,7 @@ def organizations_search(
 @main.command("organizations-async")
 @click.option(
     "--payload",
+    "--payload-path",
     "payload_path",
     required=True,
     type=click.Path(),
