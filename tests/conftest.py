@@ -24,6 +24,11 @@ ORGANIZATIONS_RESPONSE = {
     "next": None,
 }
 
+JSONL_RESPONSE = (
+    '{"business_id":"FI01320292","name":"Test Org"}\n'
+    '{"business_id":"FI99999999","name":"Another Org"}'
+)
+
 ASYNC_JOB_ACCEPTED = {"state": "accepted", "progress": 0}
 ASYNC_JOB_PROCESS = {"state": "process", "progress": 50}
 ASYNC_JOB_COMPLETED = {

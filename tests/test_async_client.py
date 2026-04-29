@@ -13,6 +13,7 @@ from conftest import (
     ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
+    JSONL_RESPONSE,
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
@@ -144,7 +145,7 @@ class TestVainuAPIKeyClientCompaniesAsync:
 class TestVainuAPIKeyClientOrganizations:
     @respx.mock
     async def test_organizations_post_returns_dict(self):
-        respx.post(f"{BASE_URL}/v3/organizations/").mock(
+        respx.post(f"{BASE_URL}/v3/organizations/?format=json").mock(
             return_value=httpx.Response(200, json=ORGANIZATIONS_RESPONSE)
         )
         client = VainuAPIKeyClient(api_key="test-key")
@@ -152,6 +153,26 @@ class TestVainuAPIKeyClientOrganizations:
         await client.close()
         assert isinstance(result, dict)
         assert result["count"] == 1
+
+    @respx.mock
+    async def test_organizations_post_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/organizations/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations(payload={"query": "vainu"}, format="jsonl")
+        await client.close()
+        assert result == JSONL_RESPONSE
+
+    @respx.mock
+    async def test_companies_get_returns_raw_jsonl_text(self):
+        respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, text=JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.companies(payload="?country=FI", format="jsonl")
+        await client.close()
+        assert result == JSONL_RESPONSE
 
 
 # ── VainuOAuthAPIClient ──────────────────────────────────────────────────────

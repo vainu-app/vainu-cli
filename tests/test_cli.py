@@ -10,6 +10,7 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     JWT_REFRESH_URL,
+    JSONL_RESPONSE,
     ORGANIZATIONS_RESPONSE,
 )
 
@@ -304,7 +305,11 @@ class TestOrganizationsSearch:
 
     @resp.activate
     def test_organizations_search_payload_path_alias(self, runner, tmp_path):
-        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/", json=ORGANIZATIONS_RESPONSE)
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=json",
+            json=ORGANIZATIONS_RESPONSE,
+        )
         payload_file = tmp_path / "payload.json"
         payload_file.write_text('{"query": "vainu"}')
         result = runner.invoke(
@@ -319,6 +324,49 @@ class TestOrganizationsSearch:
             catch_exceptions=False,
         )
         assert result.exit_code == 0
+
+    @resp.activate
+    def test_organizations_search_accepts_format(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=jsonl",
+            body=JSONL_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations", "--payload", "-", "--format", "jsonl"],
+            input='{"query": "vainu"}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert result.output == f"{JSONL_RESPONSE}\n"
+
+    @resp.activate
+    def test_organizations_search_writes_raw_jsonl_to_file(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=jsonl",
+            body=JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "organizations.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": "vainu"}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == JSONL_RESPONSE
 
 
 class TestOrganizationsExport:
@@ -345,6 +393,8 @@ class TestOrganizationsExport:
                     "organizations-async",
                     "--payload-path",
                     str(payload_file),
+                    "--format",
+                    "jsonl",
                     "--output",
                     str(out),
                 ],
@@ -352,7 +402,9 @@ class TestOrganizationsExport:
             )
 
         assert result.exit_code == 0
-        instance.organizations_async.assert_awaited_once_with(payload={"query": "vainu"})
+        instance.organizations_async.assert_awaited_once_with(
+            payload={"query": "vainu"}, format="jsonl"
+        )
 
 
 # ── --version ─────────────────────────────────────────────────────────────────
