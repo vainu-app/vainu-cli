@@ -154,6 +154,61 @@ def _write_output(data: dict | list | str, output: str | None) -> None:
         click.echo(text)
 
 
+def _option_query(func: F) -> F:
+    return click.option("--query", default=None, help="Query string (e.g. '?country=FI').")(func)
+
+
+def _option_payload(required: bool) -> Callable[[F], F]:
+    kwargs: dict[str, Any] = {
+        "required": required,
+        "type": click.Path(),
+        "help": "JSON payload file path, or '-' to read from stdin.",
+    }
+    if not required:
+        kwargs["default"] = None
+    return click.option(
+        "--payload",
+        "--payload-path",
+        "payload_path",
+        **kwargs,
+    )
+
+
+def _option_format(help_text: str) -> Callable[[F], F]:
+    return click.option(
+        "--format",
+        "fmt",
+        type=click.Choice(RESPONSE_FORMATS),
+        default="json",
+        show_default=True,
+        help=help_text,
+    )
+
+
+def _option_output(required: bool) -> Callable[[F], F]:
+    help_text = "Output file (required)." if required else "Write result to file."
+    kwargs: dict[str, Any] = {
+        "required": required,
+        "type": click.Path(),
+        "help": help_text,
+    }
+    if not required:
+        kwargs["default"] = None
+    return click.option("--output", **kwargs)
+
+
+def _option_poll_interval(func: F) -> F:
+    return click.option(
+        "--poll-interval", default=3, show_default=True, help="Poll interval in seconds."
+    )(func)
+
+
+def _option_timeout(func: F) -> F:
+    return click.option(
+        "--timeout", default=14400, show_default=True, help="Max seconds to wait for async job."
+    )(func)
+
+
 # ── Root group ──────────────────────────────────────────────────────────────
 
 
@@ -243,24 +298,10 @@ def main(
 
 
 @main.command("companies")
-@click.option("--query", default=None, help="Query string (e.g. '?country=FI').")
-@click.option(
-    "--payload",
-    "--payload-path",
-    "payload_path",
-    default=None,
-    type=click.Path(),
-    help="JSON payload file path, or '-' to read from stdin.",
-)
-@click.option(
-    "--format",
-    "fmt",
-    type=click.Choice(RESPONSE_FORMATS),
-    default="json",
-    show_default=True,
-    help="Response format.",
-)
-@click.option("--output", default=None, type=click.Path(), help="Write result to file.")
+@_option_query
+@_option_payload(required=False)
+@_option_format("Response format.")
+@_option_output(required=False)
 @click.pass_obj
 @_timed_task("companies")
 def companies_search(
@@ -292,28 +333,12 @@ def companies_search(
 
 
 @main.command("companies-async")
-@click.option("--query", default=None, help="Query string (e.g. '?country=FI').")
-@click.option(
-    "--payload",
-    "--payload-path",
-    "payload_path",
-    default=None,
-    type=click.Path(),
-    help="JSON payload file path, or '-' to read from stdin.",
-)
-@click.option(
-    "--format",
-    "fmt",
-    type=click.Choice(RESPONSE_FORMATS),
-    default="json",
-    show_default=True,
-    help="Export format.",
-)
-@click.option("--output", required=True, type=click.Path(), help="Output file (required).")
-@click.option("--poll-interval", default=3, show_default=True, help="Poll interval in seconds.")
-@click.option(
-    "--timeout", default=14400, show_default=True, help="Max seconds to wait for async job."
-)
+@_option_query
+@_option_payload(required=False)
+@_option_format("Export format.")
+@_option_output(required=True)
+@_option_poll_interval
+@_option_timeout
 @click.pass_obj
 @_timed_task("companies-async")
 def companies_export(
@@ -345,23 +370,9 @@ def companies_export(
 
 
 @main.command("organizations")
-@click.option(
-    "--payload",
-    "--payload-path",
-    "payload_path",
-    required=True,
-    type=click.Path(),
-    help="JSON payload file path, or '-' to read from stdin.",
-)
-@click.option(
-    "--format",
-    "fmt",
-    type=click.Choice(RESPONSE_FORMATS),
-    default="json",
-    show_default=True,
-    help="Response format.",
-)
-@click.option("--output", default=None, type=click.Path(), help="Write result to file.")
+@_option_payload(required=True)
+@_option_format("Response format.")
+@_option_output(required=False)
 @click.pass_obj
 @_timed_task("organizations")
 def organizations_search(
@@ -397,27 +408,11 @@ def organizations_search(
 
 
 @main.command("organizations-async")
-@click.option(
-    "--payload",
-    "--payload-path",
-    "payload_path",
-    required=True,
-    type=click.Path(),
-    help="JSON payload file path, or '-' to read from stdin.",
-)
-@click.option(
-    "--format",
-    "fmt",
-    type=click.Choice(RESPONSE_FORMATS),
-    default="json",
-    show_default=True,
-    help="Export format.",
-)
-@click.option("--output", required=True, type=click.Path(), help="Output file (required).")
-@click.option("--poll-interval", default=3, show_default=True, help="Poll interval in seconds.")
-@click.option(
-    "--timeout", default=14400, show_default=True, help="Max seconds to wait for async job."
-)
+@_option_payload(required=True)
+@_option_format("Export format.")
+@_option_output(required=True)
+@_option_poll_interval
+@_option_timeout
 @click.pass_obj
 @_timed_task("organizations-async")
 def organizations_export(
