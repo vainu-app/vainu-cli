@@ -1,7 +1,7 @@
 """CLI integration tests using Click's CliRunner."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 import responses as resp
@@ -189,6 +189,19 @@ class TestCompaniesSearch:
         )
         assert result.exit_code != 0
         assert "JSON" in result.output
+
+    @resp.activate
+    def test_task_duration_is_logged_at_debug(self, runner):
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        with patch("vainu_cli.cli.logger.debug") as mock_debug:
+            result = runner.invoke(
+                main,
+                ["-v", "--api-key", "test-key", "companies", "--query", "?country=FI"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        mock_debug.assert_any_call("Task '%s' %s in %.3fs", "companies", "completed", ANY)
 
 
 # ── companies export ──────────────────────────────────────────────────────────

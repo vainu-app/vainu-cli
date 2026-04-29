@@ -5,6 +5,9 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
+from functools import wraps
+from time import perf_counter
+from typing import Any, Callable, TypeVar, cast
 
 import click
 
@@ -27,6 +30,34 @@ from vainu_cli._sync_client import (
 from vainu_cli._version import __version__
 
 logger = logging.getLogger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _log_task_duration(task_name: str, start_time: float, success: bool) -> None:
+    elapsed = perf_counter() - start_time
+    status = "completed" if success else "failed"
+    logger.debug("Task '%s' %s in %.3fs", task_name, status, elapsed)
+
+
+def _timed_task(task_name: str) -> Callable[[F], F]:
+    """Decorator that logs command execution time at DEBUG level."""
+
+    def _decorator(func: F) -> F:
+        @wraps(func)
+        def _wrapper(*args: Any, **kwargs: Any) -> Any:
+            start_time = perf_counter()
+            success = False
+            try:
+                result = func(*args, **kwargs)
+                success = True
+                return result
+            finally:
+                _log_task_duration(task_name, start_time, success)
+
+        return cast(F, _wrapper)
+
+    return _decorator
 
 
 @dataclass
@@ -230,6 +261,7 @@ def main(
 )
 @click.option("--output", default=None, type=click.Path(), help="Write result to file.")
 @click.pass_obj
+@_timed_task("companies")
 def companies_search(
     config: Config,
     query: str | None,
@@ -282,6 +314,7 @@ def companies_search(
     "--timeout", default=14400, show_default=True, help="Max seconds to wait for async job."
 )
 @click.pass_obj
+@_timed_task("companies-async")
 def companies_export(
     config: Config,
     query: str | None,
@@ -321,6 +354,7 @@ def companies_export(
 )
 @click.option("--output", default=None, type=click.Path(), help="Write result to file.")
 @click.pass_obj
+@_timed_task("organizations")
 def organizations_search(
     config: Config,
     payload_path: str,
@@ -367,6 +401,7 @@ def organizations_search(
     "--timeout", default=14400, show_default=True, help="Max seconds to wait for async job."
 )
 @click.pass_obj
+@_timed_task("organizations-async")
 def organizations_export(
     config: Config,
     payload_path: str,
