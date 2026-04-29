@@ -28,6 +28,7 @@ from vainu_cli._sync_client import (
     VainuOAuthSyncClient,
 )
 from vainu_cli._version import __version__
+from vainu_cli.common import RESPONSE_FORMATS, ResponseFormat
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +144,8 @@ def _load_payload(query: str | None, payload_path: str | None) -> str | dict:
         raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
 
 
-def _write_output(data: dict | list, output: str | None) -> None:
-    text = json.dumps(data, indent=2, ensure_ascii=False)
+def _write_output(data: dict | list | str, output: str | None) -> None:
+    text = data if isinstance(data, str) else json.dumps(data, indent=2, ensure_ascii=False)
     if output:
         with open(output, "w") as fh:
             fh.write(text)
@@ -254,7 +255,7 @@ def main(
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["json", "csv", "jsonl"]),
+    type=click.Choice(RESPONSE_FORMATS),
     default="json",
     show_default=True,
     help="Response format.",
@@ -266,7 +267,7 @@ def companies_search(
     config: Config,
     query: str | None,
     payload_path: str | None,
-    fmt: str,
+    fmt: ResponseFormat,
     output: str | None,
 ) -> None:
     """Fetch company data (synchronous paginated result)."""
@@ -303,7 +304,7 @@ def companies_search(
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["json", "csv", "jsonl"]),
+    type=click.Choice(RESPONSE_FORMATS),
     default="json",
     show_default=True,
     help="Export format.",
@@ -319,7 +320,7 @@ def companies_export(
     config: Config,
     query: str | None,
     payload_path: str | None,
-    fmt: str,
+    fmt: ResponseFormat,
     output: str,
     poll_interval: int,
     timeout: int,
@@ -352,12 +353,21 @@ def companies_export(
     type=click.Path(),
     help="JSON payload file path, or '-' to read from stdin.",
 )
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(RESPONSE_FORMATS),
+    default="json",
+    show_default=True,
+    help="Response format.",
+)
 @click.option("--output", default=None, type=click.Path(), help="Write result to file.")
 @click.pass_obj
 @_timed_task("organizations")
 def organizations_search(
     config: Config,
     payload_path: str,
+    fmt: ResponseFormat,
     output: str | None,
 ) -> None:
     """Fetch organization data (POST with JSON payload)."""
@@ -372,7 +382,7 @@ def organizations_search(
         async def _run() -> dict:
             client = _make_async_client(config)
             try:
-                return await client.organizations(payload=payload)
+                return await client.organizations(payload=payload, format=fmt)
             finally:
                 await client.close()
 
@@ -380,7 +390,7 @@ def organizations_search(
     else:
         client = _make_sync_client(config)
         try:
-            result = client.organizations(payload=payload)
+            result = client.organizations(payload=payload, format=fmt)
         finally:
             client.close()
     _write_output(result, output)
@@ -395,6 +405,14 @@ def organizations_search(
     type=click.Path(),
     help="JSON payload file path, or '-' to read from stdin.",
 )
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(RESPONSE_FORMATS),
+    default="json",
+    show_default=True,
+    help="Export format.",
+)
 @click.option("--output", required=True, type=click.Path(), help="Output file (required).")
 @click.option("--poll-interval", default=3, show_default=True, help="Poll interval in seconds.")
 @click.option(
@@ -405,6 +423,7 @@ def organizations_search(
 def organizations_export(
     config: Config,
     payload_path: str,
+    fmt: ResponseFormat,
     output: str,
     poll_interval: int,
     timeout: int,
@@ -420,7 +439,7 @@ def organizations_export(
         client = _make_async_client(config)
         client.ASYNC_POLL_INTERVAL = poll_interval
         try:
-            async_result = await client.organizations_async(payload=payload)
+            async_result = await client.organizations_async(payload=payload, format=fmt)
             await async_result.download_to_file(output)
         finally:
             await client.close()

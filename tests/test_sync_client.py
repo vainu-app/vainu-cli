@@ -11,6 +11,7 @@ from conftest import (
     ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
+    JSONL_RESPONSE,
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
@@ -143,10 +144,24 @@ class TestVainuAPIKeySyncClientCompaniesAsync:
 class TestVainuAPIKeySyncClientOrganizations:
     @resp.activate
     def test_organizations_post(self):
-        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/", json=ORGANIZATIONS_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/?format=json", json=ORGANIZATIONS_RESPONSE)
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.organizations(payload={"query": "vainu"})
         assert result["count"] == 1
+
+    @resp.activate
+    def test_organizations_post_uses_explicit_format(self):
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/?format=jsonl", body=JSONL_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations(payload={"query": "vainu"}, format="jsonl")
+        assert result == JSONL_RESPONSE
+
+    @resp.activate
+    def test_companies_get_returns_raw_jsonl_text(self):
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/", body=JSONL_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.companies(payload="?country=FI", format="jsonl")
+        assert result == JSONL_RESPONSE
 
 
 # ── VainuOAuthSyncClient ─────────────────────────────────────────────────────

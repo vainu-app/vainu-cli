@@ -199,10 +199,10 @@ Same options as the company commands (organizations always use POST with a JSON 
 
 | Method | Description |
 |---|---|
-| `companies(payload, format)` | Fetch company data |
+| `companies(payload, format)` | Fetch company data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
 | `companies_async(payload, format)` | Submit async job → `AsyncResult` |
-| `organizations(payload)` | Fetch organization data |
-| `organizations_async(payload)` | Submit async job → `AsyncResult` |
+| `organizations(payload, format)` | Fetch organization data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
+| `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
 | `close()` | Close HTTP connection |
 
 ### Sync clients
@@ -225,6 +225,10 @@ await result.download_to_file(path)  # Download via curl (async)
 result.json()                # Download and parse as dict (sync)
 result.download_to_file(path)        # Download via streaming requests (sync)
 ```
+
+Search methods return parsed JSON only when `format="json"`. For `format="csv"` and
+`format="jsonl"`, they return the raw response text so the caller can write or stream it
+without JSON re-encoding.
 
 ---
 

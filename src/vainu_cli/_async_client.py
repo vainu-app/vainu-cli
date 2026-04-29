@@ -9,7 +9,14 @@ from urllib.parse import urljoin
 
 import httpx
 
-from vainu_cli.common import DEFAULT_BASE_URL, JWT_REFRESH_ENDPOINT_PATH, AsyncJobState
+from vainu_cli.common import (
+    AsyncJobState,
+    DEFAULT_RESPONSE_FORMAT,
+    DEFAULT_BASE_URL,
+    JWT_REFRESH_ENDPOINT_PATH,
+    ResponseFormat,
+    parse_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +82,7 @@ class VainuAPIBaseClient:
         method: http.HTTPMethod,
         path: str,
         payload: dict | str,
-        format: str = "json",
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
     ) -> AsyncResult:
         """Submit an async job and poll until complete."""
         separator = "&" if "?" in path else "?"
@@ -126,7 +133,11 @@ class VainuAPIBaseClient:
             )
             await asyncio.sleep(self.ASYNC_POLL_INTERVAL)
 
-    async def companies_async(self, payload: dict | str, format: str = "json") -> AsyncResult:
+    async def companies_async(
+        self,
+        payload: dict | str,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> AsyncResult:
         path = "/v2/companies/async/"
         if isinstance(payload, dict):
             return await self.request_api_async(
@@ -141,39 +152,55 @@ class VainuAPIBaseClient:
             )
         raise ValueError("payload must be str or dict")
 
-    async def companies(self, payload: dict | str, format: str = "json") -> dict:
+    async def companies(
+        self,
+        payload: dict | str,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
         path = "/v2/companies/"
         if isinstance(payload, dict):
-            return (
+            return parse_response(
                 await self.request(
                     method=http.HTTPMethod.POST,
                     path=f"{path}?format={format}",
                     json=payload,
-                )
-            ).json()
+                ),
+                format,
+            )
         if isinstance(payload, str):
-            return (
+            return parse_response(
                 await self.request(
                     method=http.HTTPMethod.GET,
                     path=f"{path}{payload}&format={format}",
-                )
-            ).json()
+                ),
+                format,
+            )
         raise ValueError("payload must be str or dict")
 
-    async def organizations(self, payload: dict) -> dict:
-        return (
+    async def organizations(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        return parse_response(
             await self.request(
                 method=http.HTTPMethod.POST,
-                path="/v3/organizations/",
+                path=f"/v3/organizations/?format={format}",
                 json=payload,
-            )
-        ).json()
+            ),
+            format,
+        )
 
-    async def organizations_async(self, payload: dict) -> AsyncResult:
+    async def organizations_async(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> AsyncResult:
         return await self.request_api_async(
             method=http.HTTPMethod.POST,
             path="/v3/organizations/async/",
             payload=payload,
+            format=format,
         )
 
     async def close(self) -> None:
