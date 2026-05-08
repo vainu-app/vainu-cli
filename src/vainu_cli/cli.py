@@ -73,11 +73,15 @@ class Config:
     verbose: bool
 
 
-def _make_sync_client(config: Config) -> SyncBaseClient:
+def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
             raise click.ClickException("API key required. Use --api-key or set VAINU_API_KEY.")
-        return VainuAPIKeySyncClient(api_key=config.api_key, base_url=config.base_url)
+        return VainuAPIKeySyncClient(
+            api_key=config.api_key,
+            base_url=config.base_url,
+            language=language,
+        )
     if config.auth_method == "oauth":
         if not config.client_id or not config.client_secret:
             raise click.ClickException(
@@ -88,6 +92,7 @@ def _make_sync_client(config: Config) -> SyncBaseClient:
             client_id=config.client_id,
             client_secret=config.client_secret,
             base_url=config.base_url,
+            language=language,
         )
     if config.auth_method == "jwt":
         if not config.jwt_token:
@@ -97,15 +102,20 @@ def _make_sync_client(config: Config) -> SyncBaseClient:
         return VainuJWTSyncClient(
             refresh_token=config.jwt_token,
             base_url=config.base_url,
+            language=language,
         )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
 
-def _make_async_client(config: Config) -> AsyncBaseClient:
+def _make_async_client(config: Config, language: str | None = None) -> AsyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
             raise click.ClickException("API key required. Use --api-key or set VAINU_API_KEY.")
-        return VainuAPIKeyClient(api_key=config.api_key, base_url=config.base_url)
+        return VainuAPIKeyClient(
+            api_key=config.api_key,
+            base_url=config.base_url,
+            language=language,
+        )
     if config.auth_method == "oauth":
         if not config.client_id or not config.client_secret:
             raise click.ClickException(
@@ -116,6 +126,7 @@ def _make_async_client(config: Config) -> AsyncBaseClient:
             client_id=config.client_id,
             client_secret=config.client_secret,
             base_url=config.base_url,
+            language=language,
         )
     if config.auth_method == "jwt":
         if not config.jwt_token:
@@ -125,6 +136,7 @@ def _make_async_client(config: Config) -> AsyncBaseClient:
         return VainuJWTAPIClient(
             refresh_token=config.jwt_token,
             base_url=config.base_url,
+            language=language,
         )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
@@ -174,15 +186,23 @@ def _option_payload(required: bool) -> Callable[[F], F]:
     )
 
 
-def _option_format(help_text: str) -> Callable[[F], F]:
+def _option_format(func: F) -> F:
     return click.option(
         "--format",
         "fmt",
         type=click.Choice(RESPONSE_FORMATS),
         default="json",
         show_default=True,
-        help=help_text,
-    )
+        help="Response format.",
+    )(func)
+
+
+def _option_language(func: F) -> F:
+    return click.option(
+        "--language",
+        default=None,
+        help="Language for the Accept-Language header.",
+    )(func)
 
 
 def _option_output(required: bool) -> Callable[[F], F]:
@@ -195,6 +215,12 @@ def _option_output(required: bool) -> Callable[[F], F]:
     if not required:
         kwargs["default"] = None
     return click.option("--output", **kwargs)
+
+
+def _option_filter_base(func: F) -> F:
+    decorated = _option_format(func)
+    decorated = _option_language(decorated)
+    return decorated
 
 
 def _option_poll_interval(func: F) -> F:
@@ -300,7 +326,7 @@ def main(
 @main.command("companies")
 @_option_query
 @_option_payload(required=False)
-@_option_format("Response format.")
+@_option_filter_base
 @_option_output(required=False)
 @click.pass_obj
 @_timed_task("companies")
@@ -309,6 +335,7 @@ def companies_search(
     query: str | None,
     payload_path: str | None,
     fmt: ResponseFormat,
+    language: str | None,
     output: str | None,
 ) -> None:
     """Fetch company data (synchronous paginated result)."""
@@ -316,7 +343,7 @@ def companies_search(
     if config.async_mode:
 
         async def _run() -> dict:
-            client = _make_async_client(config)
+            client = _make_async_client(config, language=language)
             try:
                 return await client.companies(payload=payload, format=fmt)
             finally:
@@ -324,7 +351,7 @@ def companies_search(
 
         result = asyncio.run(_run())
     else:
-        client = _make_sync_client(config)
+        client = _make_sync_client(config, language=language)
         try:
             result = client.companies(payload=payload, format=fmt)
         finally:
@@ -335,7 +362,7 @@ def companies_search(
 @main.command("companies-async")
 @_option_query
 @_option_payload(required=False)
-@_option_format("Export format.")
+@_option_filter_base
 @_option_output(required=True)
 @_option_poll_interval
 @_option_timeout
@@ -346,6 +373,7 @@ def companies_export(
     query: str | None,
     payload_path: str | None,
     fmt: ResponseFormat,
+    language: str | None,
     output: str,
     poll_interval: int,
     timeout: int,
@@ -353,17 +381,21 @@ def companies_export(
     """Export companies via async job — polls until complete and downloads to file."""
     payload = _load_payload(query, payload_path)
 
-    async def _run() -> None:
-        client = _make_async_client(config)
+    async def _run() -> str | None:
+        client = _make_async_client(config, language=language)
         client.ASYNC_POLL_INTERVAL = poll_interval
         try:
             async_result = await client.companies_async(payload=payload, format=fmt)
-            await async_result.download_to_file(output)
+            downloaded = await async_result.download_to_file(output)
+            return async_result.result_url if downloaded is False else None
         finally:
             await client.close()
 
-    asyncio.run(_run())
-    click.echo(f"Export saved to {output}", err=True)
+    result_url = asyncio.run(_run())
+    if result_url:
+        click.echo(f"Result exists in result_url: {result_url}", err=True)
+    else:
+        click.echo(f"Export saved to {output}", err=True)
 
 
 # ── organizations ────────────────────────────────────────────────────────────
@@ -371,7 +403,7 @@ def companies_export(
 
 @main.command("organizations")
 @_option_payload(required=True)
-@_option_format("Response format.")
+@_option_filter_base
 @_option_output(required=False)
 @click.pass_obj
 @_timed_task("organizations")
@@ -379,6 +411,7 @@ def organizations_search(
     config: Config,
     payload_path: str,
     fmt: ResponseFormat,
+    language: str | None,
     output: str | None,
 ) -> None:
     """Fetch organization data (POST with JSON payload)."""
@@ -391,7 +424,7 @@ def organizations_search(
     if config.async_mode:
 
         async def _run() -> dict:
-            client = _make_async_client(config)
+            client = _make_async_client(config, language=language)
             try:
                 return await client.organizations(payload=payload, format=fmt)
             finally:
@@ -399,7 +432,7 @@ def organizations_search(
 
         result = asyncio.run(_run())
     else:
-        client = _make_sync_client(config)
+        client = _make_sync_client(config, language=language)
         try:
             result = client.organizations(payload=payload, format=fmt)
         finally:
@@ -409,7 +442,7 @@ def organizations_search(
 
 @main.command("organizations-async")
 @_option_payload(required=True)
-@_option_format("Export format.")
+@_option_filter_base
 @_option_output(required=True)
 @_option_poll_interval
 @_option_timeout
@@ -419,6 +452,7 @@ def organizations_export(
     config: Config,
     payload_path: str,
     fmt: ResponseFormat,
+    language: str | None,
     output: str,
     poll_interval: int,
     timeout: int,
@@ -430,14 +464,18 @@ def organizations_export(
     except json.JSONDecodeError as exc:
         raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
 
-    async def _run() -> None:
-        client = _make_async_client(config)
+    async def _run() -> str | None:
+        client = _make_async_client(config, language=language)
         client.ASYNC_POLL_INTERVAL = poll_interval
         try:
             async_result = await client.organizations_async(payload=payload, format=fmt)
-            await async_result.download_to_file(output)
+            downloaded = await async_result.download_to_file(output)
+            return async_result.result_url if downloaded is False else None
         finally:
             await client.close()
 
-    asyncio.run(_run())
-    click.echo(f"Export saved to {output}", err=True)
+    result_url = asyncio.run(_run())
+    if result_url:
+        click.echo(f"Result exists in result_url: {result_url}", err=True)
+    else:
+        click.echo(f"Export saved to {output}", err=True)

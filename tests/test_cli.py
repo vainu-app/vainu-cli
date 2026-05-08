@@ -26,6 +26,33 @@ def runner() -> CliRunner:
 
 
 class TestCompaniesSearch:
+    def test_language_is_passed_to_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeySyncClient") as MockClient:
+            instance = MockClient.return_value
+            instance.companies.return_value = COMPANIES_RESPONSE
+            instance.close = MagicMock()
+
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "companies",
+                    "--query",
+                    "?country=FI",
+                    "--language",
+                    "fi",
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        MockClient.assert_called_once_with(
+            api_key="test-key",
+            base_url=BASE_URL,
+            language="fi",
+        )
+
     @resp.activate
     def test_api_key_from_env(self, runner):
         resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
@@ -278,6 +305,35 @@ class TestCompaniesExport:
         assert result.exit_code == 0
         instance.companies_async.assert_awaited_once_with(payload={"filter": {}}, format="json")
 
+    def test_export_reports_result_url_and_skips_saved_message(self, runner, tmp_path):
+        out = tmp_path / "export.json"
+
+        async_result_mock = MagicMock()
+        async_result_mock.download_to_file = AsyncMock(return_value=False)
+        async_result_mock.result_url = "https://api/v3/async_result/123"
+
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.companies_async = AsyncMock(return_value=async_result_mock)
+            instance.close = AsyncMock()
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "companies-async",
+                    "--query",
+                    "?country=FI",
+                    "--output",
+                    str(out),
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        assert "Result exists in result_url:" in result.output
+        assert "Export saved to" not in result.output
+
 
 # ── organizations search ──────────────────────────────────────────────────────
 
@@ -405,6 +461,37 @@ class TestOrganizationsExport:
         instance.organizations_async.assert_awaited_once_with(
             payload={"query": "vainu"}, format="jsonl"
         )
+
+    def test_organizations_export_reports_result_url(self, runner, tmp_path):
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"query": "vainu"}')
+        out = tmp_path / "export.json"
+
+        async_result_mock = MagicMock()
+        async_result_mock.download_to_file = AsyncMock(return_value=False)
+        async_result_mock.result_url = "https://api/v3/async_result/123"
+
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.organizations_async = AsyncMock(return_value=async_result_mock)
+            instance.close = AsyncMock()
+
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "organizations-async",
+                    "--payload-path",
+                    str(payload_file),
+                    "--output",
+                    str(out),
+                ],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        assert "Result exists in result_url:" in result.output
 
 
 # ── --version ─────────────────────────────────────────────────────────────────
