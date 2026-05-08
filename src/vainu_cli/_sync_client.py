@@ -14,6 +14,7 @@ from vainu_cli.common import (
     DEFAULT_BASE_URL,
     JWT_REFRESH_ENDPOINT_PATH,
     ResponseFormat,
+    build_async_result,
     parse_response,
 )
 
@@ -22,16 +23,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AsyncResult:
-    download_url: str
+    download_url: str | None
     duration: int
+    result_url: str | None = None
 
     def json(self) -> dict:
+        if not self.download_url:
+            if self.result_url:
+                raise RuntimeError(f"Result exists in result_url: {self.result_url}")
+            raise RuntimeError("Async result is missing both download_url and result_url")
         logger.info("Downloading and parsing JSON from: %s", self.download_url)
         response = requests.get(self.download_url, timeout=120)
         response.raise_for_status()
         return response.json()
 
-    def download_to_file(self, output_path: str) -> None:
+    def download_to_file(self, output_path: str) -> bool:
+        if self.result_url and not self.download_url:
+            logger.info("Result exists in result_url: %s", self.result_url)
+            return False
+        if not self.download_url:
+            raise RuntimeError("Async result is missing both download_url and result_url")
         logger.info("Downloading file to %s", self.download_url)
         with requests.get(self.download_url, stream=True, timeout=120) as response:
             response.raise_for_status()
@@ -40,8 +51,7 @@ class AsyncResult:
                     if chunk:
                         output_file.write(chunk)
         logger.info("Downloaded file: %s", output_path)
-
-
+        return True
 def _raise_for_status_with_body(response: requests.Response) -> requests.Response:
     try:
         response.raise_for_status()
@@ -56,19 +66,28 @@ class VainuAPIBaseClient:
     ASYNC_MAX_WAIT_SECONDS = 14400  # 4 hours
     ASYNC_POLL_MAX_RETRIES = 5
 
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: int = 120) -> None:
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: int = 120,
+        language: str | None = None,
+    ) -> None:
         self._base_url = base_url
         self._timeout = timeout
+        self._language = language
         self._http = requests.Session()
         self._async_max_wait_seconds = self.ASYNC_MAX_WAIT_SECONDS
 
     def request(self, method: http.HTTPMethod, path: str, **kwargs) -> requests.Response:
         logger.debug("Vainu API %s %s", method, path)
         url = path if path.startswith(("http://", "https://")) else f"{self._base_url}{path}"
+        headers = self.get_headers()
+        if self._language:
+            headers["Accept-Language"] = self._language
         response = self._http.request(
             method=str(method),
             url=url,
-            headers=self.get_headers(),
+            headers=headers,
             timeout=self._timeout,
             **kwargs,
         )
@@ -124,11 +143,12 @@ class VainuAPIBaseClient:
                 return AsyncResult(
                     download_url=poll_data.get("download_link"),
                     duration=poll_data.get("duration"),
+                    result_url=payload.get("result_url") if isinstance(payload, dict) else None,
                 )
             if status not in {AsyncJobState.ACCEPTED, AsyncJobState.PROCESS}:
                 raise RuntimeError(f"Async job failed with state {status!r}: {poll_data}")
             logger.debug(
-                "Async job %s — polling again in %ss (progress: %s)",
+                "Async job state: %s — polling again in %ss (progress: %s)",
                 status,
                 self.ASYNC_POLL_INTERVAL,
                 progress,
@@ -215,8 +235,13 @@ class VainuAPIBaseClient:
 class VainuAPIKeySyncClient(VainuAPIBaseClient):
     """Synchronous client using a static API key."""
 
-    def __init__(self, api_key: str, base_url: str = DEFAULT_BASE_URL) -> None:
-        super().__init__(base_url=base_url, timeout=120)
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = DEFAULT_BASE_URL,
+        language: str | None = None,
+    ) -> None:
+        super().__init__(base_url=base_url, timeout=120, language=language)
         if not api_key:
             raise ValueError("api_key must not be empty. Set VAINU_API_KEY or pass api_key=...")
         self.api_key = api_key
@@ -228,8 +253,13 @@ class VainuAPIKeySyncClient(VainuAPIBaseClient):
 class VainuJWTSyncClient(VainuAPIBaseClient):
     """Synchronous client with automatic JWT refresh token exchange."""
 
-    def __init__(self, refresh_token: str, base_url: str = DEFAULT_BASE_URL) -> None:
-        super().__init__(base_url=base_url, timeout=120)
+    def __init__(
+        self,
+        refresh_token: str,
+        base_url: str = DEFAULT_BASE_URL,
+        language: str | None = None,
+    ) -> None:
+        super().__init__(base_url=base_url, timeout=120, language=language)
         if not refresh_token:
             raise ValueError("refresh_token must not be empty.")
         self.jwt_token = refresh_token
@@ -269,8 +299,9 @@ class VainuOAuthSyncClient(VainuAPIBaseClient):
         client_secret: str,
         scope: str = "vainu:api",
         base_url: str = DEFAULT_BASE_URL,
+        language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=30)
+        super().__init__(base_url=base_url, timeout=30, language=language)
         if not client_id or not client_secret:
             raise ValueError(
                 "client_id and client_secret are required. "

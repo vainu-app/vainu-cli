@@ -56,6 +56,16 @@ class TestVainuAPIKeyClientCompanies:
         assert route.calls[0].request.headers["API-Key"] == "secret-key"
 
     @respx.mock
+    async def test_companies_get_sends_accept_language_header(self):
+        route = respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="secret-key", language="fi")
+        await client.companies(payload="?country=FI")
+        await client.close()
+        assert route.calls[0].request.headers["Accept-Language"] == "fi"
+
+    @respx.mock
     async def test_companies_get_returns_json(self):
         respx.get(f"{BASE_URL}/v2/companies/").mock(
             return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
@@ -369,3 +379,13 @@ class TestAsyncResult:
         with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
             with pytest.raises(RuntimeError, match="curl is not installed"):
                 await result.download_to_file(str(out))
+
+    async def test_download_to_file_skips_when_only_result_url_present(self, tmp_path):
+        out = tmp_path / "out.json"
+        result = AsyncResult(download_url=None, duration=1, result_url="https://api/v3/result/123")
+
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            downloaded = await result.download_to_file(str(out))
+
+        assert downloaded is False
+        mock_exec.assert_not_called()

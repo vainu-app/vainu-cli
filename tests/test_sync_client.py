@@ -55,6 +55,13 @@ class TestVainuAPIKeySyncClientCompanies:
         assert resp.calls[0].request.headers["API-Key"] == "secret-key"
 
     @resp.activate
+    def test_companies_get_sends_accept_language_header(self):
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="secret-key", language="fi")
+        client.companies(payload="?country=FI")
+        assert resp.calls[0].request.headers["Accept-Language"] == "fi"
+
+    @resp.activate
     def test_companies_get_returns_json(self):
         resp.add(resp.GET, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
         client = VainuAPIKeySyncClient(api_key="test-key")
@@ -315,3 +322,12 @@ class TestAsyncResult:
         result = AsyncResult(download_url="https://downloads.vainu.io/result.json", duration=1)
         result.download_to_file(str(out))
         assert out.read_bytes() == content
+
+    def test_download_to_file_skips_when_only_result_url_present(self, tmp_path):
+        out = tmp_path / "out.json"
+        result = AsyncResult(download_url=None, duration=1, result_url="https://api/v3/result/123")
+
+        downloaded = result.download_to_file(str(out))
+
+        assert downloaded is False
+        assert not out.exists()
