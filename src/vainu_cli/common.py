@@ -1,7 +1,7 @@
 """Shared constants and types used by both sync and async clients."""
 
 import enum
-from typing import Any, Callable, Literal, Protocol, TypeAlias, TypeVar
+from typing import Literal, Protocol, TypeAlias
 
 DEFAULT_BASE_URL = "https://api.vainu.io/api"
 JWT_REFRESH_ENDPOINT_PATH = "/token_authentication/refresh/"

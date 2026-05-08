@@ -10,10 +10,10 @@ from urllib.parse import urljoin
 import httpx
 
 from vainu_cli.common import (
-    AsyncJobState,
-    DEFAULT_RESPONSE_FORMAT,
     DEFAULT_BASE_URL,
+    DEFAULT_RESPONSE_FORMAT,
     JWT_REFRESH_ENDPOINT_PATH,
+    AsyncJobState,
     ResponseFormat,
     parse_response,
 )
