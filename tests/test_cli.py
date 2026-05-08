@@ -9,8 +9,8 @@ from click.testing import CliRunner
 from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
-    JWT_REFRESH_URL,
     JSONL_RESPONSE,
+    JWT_REFRESH_URL,
     ORGANIZATIONS_RESPONSE,
 )
 

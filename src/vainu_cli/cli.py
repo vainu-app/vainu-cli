@@ -4,10 +4,11 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
 from time import perf_counter
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import click
 

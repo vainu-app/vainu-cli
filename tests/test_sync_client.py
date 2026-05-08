@@ -151,7 +151,9 @@ class TestVainuAPIKeySyncClientCompaniesAsync:
 class TestVainuAPIKeySyncClientOrganizations:
     @resp.activate
     def test_organizations_post(self):
-        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/?format=json", json=ORGANIZATIONS_RESPONSE)
+        resp.add(
+            resp.POST, f"{BASE_URL}/v3/organizations/?format=json", json=ORGANIZATIONS_RESPONSE
+        )
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.organizations(payload={"query": "vainu"})
         assert result["count"] == 1
