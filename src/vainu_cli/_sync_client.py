@@ -51,12 +51,24 @@ class AsyncResult:
                         output_file.write(chunk)
         logger.info("Downloaded file: %s", output_path)
         return True
+
+
 def _raise_for_status_with_body(response: requests.Response) -> requests.Response:
     try:
         response.raise_for_status()
     except requests.exceptions.HTTPError as err:
-        logger.error("HTTP error: %s — body: %s", err, response.text)
-        raise
+        logger.error(
+            "HTTP error %s: %s — body: %s",
+            response.status_code,
+            err,
+            response.text,
+        )
+        if response.status_code not in (
+            http.HTTPStatus.BAD_REQUEST,
+            http.HTTPStatus.FORBIDDEN,
+            http.HTTPStatus.NOT_FOUND,
+        ):
+            raise
     return response
 
 

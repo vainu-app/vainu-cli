@@ -3,6 +3,7 @@
 import time
 
 import pytest
+import requests
 import responses as resp
 from conftest import (
     ASYNC_JOB_ACCEPTED,
@@ -80,6 +81,30 @@ class TestVainuAPIKeySyncClientCompanies:
         client = VainuAPIKeySyncClient(api_key="test-key")
         with pytest.raises(ValueError, match="payload must be str or dict"):
             client.companies(payload=123)  # type: ignore[arg-type]
+
+    @resp.activate
+    def test_companies_400_raises_concise_api_message_from_json(self):
+        resp.add(
+            resp.GET,
+            f"{BASE_URL}/v2/companies/",
+            json={"detail": "Invalid query parameter: foo"},
+            status=400,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(requests.exceptions.HTTPError, match="Invalid query parameter: foo"):
+            client.companies(payload="?country=FI")
+
+    @resp.activate
+    def test_companies_400_raises_concise_api_message_from_text_body(self):
+        resp.add(
+            resp.GET,
+            f"{BASE_URL}/v2/companies/",
+            body="Bad request payload",
+            status=400,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(requests.exceptions.HTTPError, match="Bad request payload"):
+            client.companies(payload="?country=FI")
 
 
 class TestVainuAPIKeySyncClientCompaniesAsync:
