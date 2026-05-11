@@ -66,6 +66,8 @@ class AsyncResult:
             raise RuntimeError(
                 "curl is not installed. Install curl or use .json() / .download_url directly."
             ) from exc
+
+
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
     ASYNC_POLL_MAX_RETRIES = 5
