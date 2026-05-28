@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
@@ -29,7 +31,17 @@ from vainu_cli._sync_client import (
     VainuOAuthSyncClient,
 )
 from vainu_cli._version import __version__
-from vainu_cli.common import RESPONSE_FORMATS, ResponseFormat
+from vainu_cli.auth.browser_client import (
+    VainuBrowserAuthAPIClient,
+    VainuBrowserAuthSyncClient,
+)
+from vainu_cli.auth.commands import (
+    auth_group,
+    login_command,
+    logout_command,
+)
+from vainu_cli.auth.storage import StoredCredentials, TokenStore
+from vainu_cli.common import PUBLIC_CLIENT_ID, RESPONSE_FORMATS, ResponseFormat
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +84,14 @@ class Config:
     base_url: str
     async_mode: bool
     verbose: bool
+    stored: StoredCredentials | None = None
+    store: TokenStore | None = None
 
 
 def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
-            raise click.ClickException("API key required. Use --api-key or set VAINU_API_KEY.")
+            raise click.ClickException("API key required. Use --api-key, set VAINU_API_KEY, or run `vainu login`.")
         return VainuAPIKeySyncClient(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -105,13 +119,24 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
             base_url=config.base_url,
             language=language,
         )
+    if config.auth_method == "browser":
+        if config.stored is None:
+            raise click.ClickException(
+                "No stored credentials. Run `vainu login` first."
+            )
+        return VainuBrowserAuthSyncClient(
+            stored=config.stored,
+            store=config.store,
+            base_url=config.base_url,
+            language=language,
+        )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
 
 def _make_async_client(config: Config, language: str | None = None) -> AsyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
-            raise click.ClickException("API key required. Use --api-key or set VAINU_API_KEY.")
+            raise click.ClickException("API key required. Use --api-key, set VAINU_API_KEY, or run `vainu login`.")
         return VainuAPIKeyClient(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -139,7 +164,71 @@ def _make_async_client(config: Config, language: str | None = None) -> AsyncBase
             base_url=config.base_url,
             language=language,
         )
+    if config.auth_method == "browser":
+        if config.stored is None:
+            raise click.ClickException(
+                "No stored credentials. Run `vainu login` first."
+            )
+        return VainuBrowserAuthAPIClient(
+            stored=config.stored,
+            store=config.store,
+            base_url=config.base_url,
+            language=language,
+        )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
+
+
+def _resolve_credentials(
+    *,
+    auth_method: str | None,
+    api_key: str | None,
+    client_id: str | None,
+    client_secret: str | None,
+    jwt_token: str | None,
+    base_url: str,
+) -> tuple[str, StoredCredentials | None, TokenStore | None]:
+    """Resolve the effective auth method and (optionally) stored credentials.
+
+    Precedence: explicit flag/env → existing env vars → stored-cred env vars →
+    persisted credentials → "apikey" default.
+    """
+    if auth_method:
+        return auth_method, None, None
+    if api_key:
+        return "apikey", None, None
+    if client_id and client_secret:
+        return "oauth", None, None
+    if jwt_token:
+        return "jwt", None, None
+
+    env_access = os.environ.get("VAINU_ACCESS_TOKEN")
+    env_refresh = os.environ.get("VAINU_REFRESH_TOKEN")
+    if env_access:
+        try:
+            expires_at = float(os.environ.get("VAINU_TOKEN_EXPIRES_AT", "0") or 0)
+        except ValueError:
+            expires_at = 0.0
+        if expires_at <= 0:
+            # Assume a short remaining lifetime; refresh path will fire on use.
+            expires_at = time.time() + 300
+        stored = StoredCredentials(
+            access_token=env_access,
+            refresh_token=env_refresh or "",
+            expires_at=expires_at,
+            scope=os.environ.get("VAINU_SCOPE", ""),
+            client_id=os.environ.get("VAINU_CLIENT_ID") or PUBLIC_CLIENT_ID,
+            base_url=base_url,
+            account=None,
+            obtained_at=time.time(),
+        )
+        return "browser", stored, None  # no on-disk store — env-driven session
+
+    store = TokenStore()
+    stored = store.load()
+    if stored is not None:
+        return "browser", stored, store
+
+    return "apikey", None, None
 
 
 def _load_payload(query: str | None, payload_path: str | None) -> str | dict:
@@ -242,10 +331,13 @@ def _option_timeout(func: F) -> F:
 @click.group()
 @click.option(
     "--auth-method",
-    default="apikey",
-    type=click.Choice(["apikey", "oauth", "jwt"]),
-    show_default=True,
-    help="Authentication method.",
+    envvar="VAINU_AUTH_METHOD",
+    default=None,
+    type=click.Choice(["apikey", "oauth", "jwt", "browser"]),
+    help=(
+        "Authentication method. Defaults to auto-detect: explicit flags > env vars > "
+        "credentials saved by `vainu login` > API key."
+    ),
 )
 @click.option(
     "--api-key",
@@ -287,7 +379,7 @@ def _option_timeout(func: F) -> F:
 @click.pass_context
 def main(
     ctx: click.Context,
-    auth_method: str,
+    auth_method: str | None,
     api_key: str | None,
     client_id: str | None,
     client_secret: str | None,
@@ -298,19 +390,32 @@ def main(
 ) -> None:
     """Vainu company data API — command-line interface.
 
-    Authenticate via API key (default), OAuth 2.0 client credentials, or JWT.
-    Credentials are read from CLI flags or environment variables.
+    Run `vainu login` to sign in via the browser, or pass an API key /
+    OAuth client / JWT token via flags or environment variables.
 
     \b
     Quick start:
-        export VAINU_API_KEY=your-key
+        vainu login
         vainu companies --query "?country=FI&business_id=FI01320292"
+
+    \b
+    Or with an API key:
+        export VAINU_API_KEY=your-key
+        vainu companies --query "?country=FI"
     """
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
+    resolved_method, stored, store = _resolve_credentials(
+        auth_method=auth_method,
+        api_key=api_key,
+        client_id=client_id,
+        client_secret=client_secret,
+        jwt_token=jwt_token,
+        base_url=base_url,
+    )
     ctx.ensure_object(dict)
     ctx.obj = Config(
-        auth_method=auth_method,
+        auth_method=resolved_method,
         api_key=api_key,
         client_id=client_id,
         client_secret=client_secret,
@@ -318,6 +423,8 @@ def main(
         base_url=base_url,
         async_mode=async_mode,
         verbose=verbose,
+        stored=stored,
+        store=store,
     )
 
 
@@ -480,3 +587,10 @@ def organizations_export(
         click.echo(f"Result exists in result_url: {result_url}", err=True)
     else:
         click.echo(f"Export saved to {output}", err=True)
+
+
+# ── auth (login / logout / status) ───────────────────────────────────────────
+
+main.add_command(auth_group, name="auth")
+main.add_command(login_command, name="login")
+main.add_command(logout_command, name="logout")

@@ -5,6 +5,35 @@ from click.testing import CliRunner
 
 BASE_URL = "https://api.vainu.io/api"
 JWT_REFRESH_URL = "https://api.vainu.io/api/token_authentication/refresh/"
+OAUTH_TOKEN_URL = "https://api.vainu.io/api/oauth/token/"
+OAUTH_REVOKE_URL = "https://api.vainu.io/api/oauth/revoke_token/"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_auth_store(monkeypatch, tmp_path):
+    """Make sure tests never see / write real user credentials.
+
+    Forces the file-backend, points it at a tmp dir, and clears any VAINU_*
+    env vars that could otherwise leak from the developer's shell.
+    """
+    monkeypatch.setenv("VAINU_AUTH_STORE", "file")
+    monkeypatch.setattr(
+        "vainu_cli.auth.storage.user_config_path",
+        lambda *_, **__: tmp_path / "vainu-config",
+    )
+    for var in (
+        "VAINU_API_KEY",
+        "VAINU_CLIENT_ID",
+        "VAINU_CLIENT_SECRET",
+        "VAINU_JWT_REFRESH_TOKEN",
+        "VAINU_ACCESS_TOKEN",
+        "VAINU_REFRESH_TOKEN",
+        "VAINU_TOKEN_EXPIRES_AT",
+        "VAINU_AUTH_METHOD",
+        "VAINU_BASE_URL",
+        "VAINU_SCOPE",
+    ):
+        monkeypatch.delenv(var, raising=False)
 
 COMPANIES_RESPONSE = {
     "result": [
