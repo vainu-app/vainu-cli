@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+from urllib.parse import urlparse
 
 import click
 import requests
@@ -27,6 +28,41 @@ def _base_url_from_config(ctx: click.Context) -> str:
     if config is not None and getattr(config, "base_url", None):
         return config.base_url
     return DEFAULT_BASE_URL
+
+
+def _resolve_authorize_url(authorize_url: str | None, base_url: str) -> str:
+    """Pick the host for the browser authorize leg.
+
+    An explicit `--authorize-url` (or `VAINU_AUTHORIZE_BASE_URL`) always wins.
+    Otherwise an overridden `--base-url` — a dev server, a staging host — is
+    assumed to serve the login UI too; only the production default falls back
+    to app.vainu.io.
+    """
+    if authorize_url:
+        return authorize_url
+    if base_url.rstrip("/") != DEFAULT_BASE_URL.rstrip("/"):
+        return base_url
+    return DEFAULT_AUTHORIZE_BASE_URL
+
+
+def _warn_on_split_hosts(authorize_url: str, base_url: str) -> None:
+    """Warn when the code is issued by one host and redeemed at another."""
+    authorize_host = urlparse(authorize_url).netloc
+    token_host = urlparse(base_url).netloc
+    if authorize_host == token_host:
+        return
+    is_default_pair = (
+        authorize_url.rstrip("/") == DEFAULT_AUTHORIZE_BASE_URL.rstrip("/")
+        and base_url.rstrip("/") == DEFAULT_BASE_URL.rstrip("/")
+    )
+    if is_default_pair:
+        return
+    click.echo(
+        f"Warning: authorizing at {authorize_host} but exchanging the code at "
+        f"{token_host}. Unless those hosts share an OAuth database the exchange "
+        "will fail with invalid_grant — pass --base-url to match.",
+        err=True,
+    )
 
 
 @click.command("login")
@@ -61,11 +97,11 @@ def _base_url_from_config(ctx: click.Context) -> str:
 @click.option(
     "--authorize-url",
     envvar="VAINU_AUTHORIZE_BASE_URL",
-    default=DEFAULT_AUTHORIZE_BASE_URL,
-    show_default=True,
+    default=None,
     help=(
         "Base URL for the browser authorize endpoint. Defaults to app.vainu.io "
-        "(where the login UI lives) while token exchange still hits --base-url."
+        f"(where the login UI lives) when --base-url is the default {DEFAULT_BASE_URL}, "
+        "and to --base-url otherwise."
     ),
 )
 @click.pass_context
@@ -76,10 +112,11 @@ def login_command(
     port: int,
     force: bool,
     client_id: str,
-    authorize_url: str,
+    authorize_url: str | None,
 ) -> None:
     """Sign in via the browser and store tokens locally."""
     base_url = _base_url_from_config(ctx)
+    authorize_url = _resolve_authorize_url(authorize_url, base_url)
     store = TokenStore()
     existing = store.load()
     if existing and not force:
@@ -90,6 +127,7 @@ def login_command(
             err=True,
         )
         ctx.exit(0)
+    _warn_on_split_hosts(authorize_url, base_url)
     creds = run_login(
         base_url=base_url,
         authorize_base_url=authorize_url,

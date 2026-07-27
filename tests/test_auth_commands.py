@@ -12,7 +12,7 @@ from conftest import BASE_URL, COMPANIES_RESPONSE, OAUTH_REVOKE_URL, OAUTH_TOKEN
 
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
 from vainu_cli.cli import main
-from vainu_cli.common import PUBLIC_CLIENT_ID
+from vainu_cli.common import DEFAULT_AUTHORIZE_BASE_URL, PUBLIC_CLIENT_ID
 
 
 @pytest.fixture
@@ -54,6 +54,81 @@ class TestLogin:
         assert loaded is not None
         assert loaded.account == "newuser@example.com"
         assert captured["client_id"] == PUBLIC_CLIENT_ID
+
+    def test_authorize_url_defaults_to_app_host_on_default_base_url(self, runner, monkeypatch):
+        captured: dict[str, object] = {}
+
+        def _fake_run_login(**kwargs):
+            captured.update(kwargs)
+            return _stored()
+
+        monkeypatch.setattr("vainu_cli.auth.commands.run_login", _fake_run_login)
+
+        result = runner.invoke(main, ["login"], catch_exceptions=False)
+
+        assert result.exit_code == 0
+        assert captured["authorize_base_url"] == DEFAULT_AUTHORIZE_BASE_URL
+        assert "Warning:" not in result.output
+
+    def test_authorize_url_mirrors_overridden_base_url(self, runner, monkeypatch):
+        captured: dict[str, object] = {}
+
+        def _fake_run_login(**kwargs):
+            captured.update(kwargs)
+            return _stored()
+
+        monkeypatch.setattr("vainu_cli.auth.commands.run_login", _fake_run_login)
+
+        result = runner.invoke(
+            main,
+            ["--base-url", "http://localhost:8000/api", "login"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        assert captured["authorize_base_url"] == "http://localhost:8000/api"
+        assert captured["base_url"] == "http://localhost:8000/api"
+        assert "Warning:" not in result.output
+
+    def test_explicit_authorize_url_wins_over_base_url(self, runner, monkeypatch):
+        captured: dict[str, object] = {}
+
+        def _fake_run_login(**kwargs):
+            captured.update(kwargs)
+            return _stored()
+
+        monkeypatch.setattr("vainu_cli.auth.commands.run_login", _fake_run_login)
+
+        result = runner.invoke(
+            main,
+            [
+                "--base-url",
+                "http://localhost:8000/api",
+                "login",
+                "--authorize-url",
+                "http://localhost:3000/api",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        assert captured["authorize_base_url"] == "http://localhost:3000/api"
+
+    def test_split_hosts_warns(self, runner, monkeypatch):
+        def _fake_run_login(**_kw):
+            return _stored()
+
+        monkeypatch.setattr("vainu_cli.auth.commands.run_login", _fake_run_login)
+
+        result = runner.invoke(
+            main,
+            ["login", "--authorize-url", "http://localhost:8000/api"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        assert "localhost:8000" in result.output
+        assert "invalid_grant" in result.output
 
     def test_login_refuses_to_overwrite_without_force(self, runner, monkeypatch):
         TokenStore().save(_stored(account="existing@example.com"))
