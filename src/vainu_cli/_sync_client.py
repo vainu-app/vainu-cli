@@ -11,6 +11,7 @@ import requests
 from vainu_cli.common import (
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
+    DEFAULT_TIMEOUT_SECONDS,
     JWT_REFRESH_ENDPOINT_PATH,
     AsyncJobState,
     ResponseFormat,
@@ -32,7 +33,7 @@ class AsyncResult:
                 raise RuntimeError(f"Result exists in result_url: {self.result_url}")
             raise RuntimeError("Async result is missing both download_url and result_url")
         logger.info("Downloading and parsing JSON from: %s", self.download_url)
-        response = requests.get(self.download_url, timeout=120)
+        response = requests.get(self.download_url, timeout=DEFAULT_TIMEOUT_SECONDS)
         response.raise_for_status()
         return response.json()
 
@@ -43,7 +44,9 @@ class AsyncResult:
         if not self.download_url:
             raise RuntimeError("Async result is missing both download_url and result_url")
         logger.info("Downloading file to %s", self.download_url)
-        with requests.get(self.download_url, stream=True, timeout=120) as response:
+        with requests.get(
+            self.download_url, stream=True, timeout=DEFAULT_TIMEOUT_SECONDS
+        ) as response:
             response.raise_for_status()
             with open(output_path, "wb") as output_file:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
@@ -80,7 +83,7 @@ class VainuAPIBaseClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: int = 120,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
         language: str | None = None,
     ) -> None:
         self._base_url = base_url
@@ -252,7 +255,7 @@ class VainuAPIKeySyncClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=120, language=language)
+        super().__init__(base_url=base_url, language=language)
         if not api_key:
             raise ValueError("api_key must not be empty. Set VAINU_API_KEY or pass api_key=...")
         self.api_key = api_key
@@ -270,7 +273,7 @@ class VainuJWTSyncClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=120, language=language)
+        super().__init__(base_url=base_url, language=language)
         if not refresh_token:
             raise ValueError("refresh_token must not be empty.")
         self.jwt_token = refresh_token
@@ -312,7 +315,7 @@ class VainuOAuthSyncClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=30, language=language)
+        super().__init__(base_url=base_url, language=language)
         if not client_id or not client_secret:
             raise ValueError(
                 "client_id and client_secret are required. "

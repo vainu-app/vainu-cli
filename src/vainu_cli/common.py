@@ -8,6 +8,10 @@ JWT_REFRESH_ENDPOINT_PATH = "/token_authentication/refresh/"
 ResponseFormat: TypeAlias = Literal["json", "csv", "jsonl"]
 DEFAULT_RESPONSE_FORMAT: ResponseFormat = "json"
 RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "csv", "jsonl")
+# Per-request HTTP timeout (connect + read) for every client. Slow synchronous
+# searches stream their body for well over a minute, so keep this above the
+# API's own 120s ceiling rather than racing it.
+DEFAULT_TIMEOUT_SECONDS = 121
 
 # OAuth / login
 OAUTH_AUTHORIZE_ENDPOINT = "/oauth/authorize/"
