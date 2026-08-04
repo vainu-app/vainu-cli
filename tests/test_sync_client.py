@@ -3,7 +3,6 @@
 import time
 
 import pytest
-import requests
 import responses as resp
 from conftest import (
     ASYNC_JOB_ACCEPTED,
@@ -83,7 +82,10 @@ class TestVainuAPIKeySyncClientCompanies:
             client.companies(payload=123)  # type: ignore[arg-type]
 
     @resp.activate
-    def test_companies_400_raises_concise_api_message_from_json(self):
+    def test_companies_400_returns_api_error_body_as_json(self):
+        # 4xx responses are intentionally returned to the caller (see
+        # _raise_for_status_with_body) so the CLI can surface the API's error
+        # message without a Python traceback.
         resp.add(
             resp.GET,
             f"{BASE_URL}/v2/companies/",
@@ -91,11 +93,13 @@ class TestVainuAPIKeySyncClientCompanies:
             status=400,
         )
         client = VainuAPIKeySyncClient(api_key="test-key")
-        with pytest.raises(requests.exceptions.HTTPError, match="Invalid query parameter: foo"):
-            client.companies(payload="?country=FI")
+        result = client.companies(payload="?country=FI")
+        assert result == {"detail": "Invalid query parameter: foo"}
 
     @resp.activate
-    def test_companies_400_raises_concise_api_message_from_text_body(self):
+    def test_companies_400_returns_api_error_body_as_text(self):
+        # Same as above for non-JSON error bodies — exercised via a non-JSON
+        # response format so parse_response returns the raw text.
         resp.add(
             resp.GET,
             f"{BASE_URL}/v2/companies/",
@@ -103,8 +107,8 @@ class TestVainuAPIKeySyncClientCompanies:
             status=400,
         )
         client = VainuAPIKeySyncClient(api_key="test-key")
-        with pytest.raises(requests.exceptions.HTTPError, match="Bad request payload"):
-            client.companies(payload="?country=FI")
+        result = client.companies(payload="?country=FI", format="csv")
+        assert result == "Bad request payload"
 
 
 class TestVainuAPIKeySyncClientCompaniesAsync:

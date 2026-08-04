@@ -12,6 +12,7 @@ import httpx
 from vainu_cli.common import (
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
+    DEFAULT_TIMEOUT_SECONDS,
     JWT_REFRESH_ENDPOINT_PATH,
     AsyncJobState,
     ResponseFormat,
@@ -75,7 +76,7 @@ class VainuAPIBaseClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: int = 120,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
         language: str | None = None,
     ) -> None:
         self._base_url = base_url
@@ -240,7 +241,7 @@ class VainuAPIKeyClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=120, language=language)
+        super().__init__(base_url=base_url, language=language)
         if not api_key:
             raise ValueError("api_key must not be empty. Set VAINU_API_KEY or pass api_key=...")
         self.api_key = api_key
@@ -258,7 +259,7 @@ class VainuJWTAPIClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=120, language=language)
+        super().__init__(base_url=base_url, language=language)
         if not refresh_token:
             raise ValueError("refresh_token must not be empty.")
         self.jwt_token = refresh_token
@@ -298,7 +299,7 @@ class VainuOAuthAPIClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
     ) -> None:
-        super().__init__(base_url=base_url, timeout=30, language=language)
+        super().__init__(base_url=base_url, language=language)
         if not client_id or not client_secret:
             raise ValueError(
                 "client_id and client_secret are required. "
