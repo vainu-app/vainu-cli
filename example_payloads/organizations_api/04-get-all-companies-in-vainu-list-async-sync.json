@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "recipe": "Get All Companies in Vainu List Async or Sync",
+    "source_url": "https://developers.vainu.com/v3/recipes/get-all-companies-in-vainu-list-asyncsync",
+    "endpoint_sync": "POST https://api.vainu.io/api/v3/organizations/",
+    "endpoint_async": "POST https://api.vainu.io/api/v3/organizations/async/",
+    "note": "LIST_ID is an example placeholder value from the recipe."
+  },
+  "list": "69b029b1febae898f87e40fc",
+  "fields": ["business_id"],
+  "database": "FI",
+  "limit": 10000
+}
