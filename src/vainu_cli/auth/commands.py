@@ -11,7 +11,7 @@ import click
 import requests
 
 from vainu_cli.auth.oauth_flow import run_login
-from vainu_cli.auth.storage import TokenStore
+from vainu_cli.auth.storage import TokenStore, cached_token_usernames, clear_all_cached_tokens
 from vainu_cli.common import (
     DEFAULT_AUTHORIZE_BASE_URL,
     DEFAULT_BASE_URL,
@@ -51,10 +51,9 @@ def _warn_on_split_hosts(authorize_url: str, base_url: str) -> None:
     token_host = urlparse(base_url).netloc
     if authorize_host == token_host:
         return
-    is_default_pair = (
-        authorize_url.rstrip("/") == DEFAULT_AUTHORIZE_BASE_URL.rstrip("/")
-        and base_url.rstrip("/") == DEFAULT_BASE_URL.rstrip("/")
-    )
+    is_default_pair = authorize_url.rstrip("/") == DEFAULT_AUTHORIZE_BASE_URL.rstrip(
+        "/"
+    ) and base_url.rstrip("/") == DEFAULT_BASE_URL.rstrip("/")
     if is_default_pair:
         return
     click.echo(
@@ -153,6 +152,11 @@ def logout_command(ctx: click.Context, revoke_all: bool) -> None:
     """Forget locally stored login. Optionally revoke server-side."""
     store = TokenStore()
     creds = store.load()
+    # Cached client-credentials tokens are a separate credential set from the
+    # browser login, so they go whether or not anyone is logged in.
+    cached = clear_all_cached_tokens()
+    if cached:
+        click.echo(f"Discarded {cached} cached access token(s).", err=True)
     if creds is None:
         click.echo("Not logged in.", err=True)
         ctx.exit(0)
@@ -186,11 +190,14 @@ def status_command(ctx: click.Context, as_json: bool) -> None:
     """Show whether the CLI is logged in and basic session info."""
     store = TokenStore()
     creds = store.load()
+    cached_tokens = len(cached_token_usernames())
     if creds is None:
         if as_json:
-            click.echo(json.dumps({"logged_in": False}))
+            click.echo(json.dumps({"logged_in": False, "cached_access_tokens": cached_tokens}))
         else:
             click.echo("Not logged in.")
+            if cached_tokens:
+                click.echo(f"Cached access tokens: {cached_tokens} (client credentials)")
         ctx.exit(1)
 
     expires_iso = dt.datetime.fromtimestamp(creds.expires_at, tz=dt.UTC).isoformat()
@@ -205,6 +212,7 @@ def status_command(ctx: click.Context, as_json: bool) -> None:
         "obtained_at": obtained_iso,
         "access_token_expired": creds.is_expired(),
         "storage_backend": store.backend,
+        "cached_access_tokens": cached_tokens,
     }
     if as_json:
         click.echo(json.dumps(payload, indent=2))
@@ -216,6 +224,8 @@ def status_command(ctx: click.Context, as_json: bool) -> None:
     click.echo(f"Expires at:   {expires_iso}" + (" (EXPIRED)" if creds.is_expired() else ""))
     click.echo(f"Obtained at:  {obtained_iso}")
     click.echo(f"Storage:      {store.backend}")
+    if cached_tokens:
+        click.echo(f"Cached tokens: {cached_tokens} (client credentials)")
 
 
 @click.group("auth")

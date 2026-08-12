@@ -17,6 +17,9 @@ def _isolate_auth_store(monkeypatch, tmp_path):
     env vars that could otherwise leak from the developer's shell.
     """
     monkeypatch.setenv("VAINU_AUTH_STORE", "file")
+    # Off by default so token-refresh assertions count real network calls;
+    # cache tests opt in with `token_cache=True`.
+    monkeypatch.setenv("VAINU_TOKEN_CACHE", "0")
     monkeypatch.setattr(
         "vainu_cli.auth.storage.user_config_path",
         lambda *_, **__: tmp_path / "vainu-config",
@@ -34,6 +37,7 @@ def _isolate_auth_store(monkeypatch, tmp_path):
         "VAINU_SCOPE",
     ):
         monkeypatch.delenv(var, raising=False)
+
 
 COMPANIES_RESPONSE = {
     "result": [

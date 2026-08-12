@@ -91,7 +91,9 @@ class Config:
 def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
-            raise click.ClickException("API key required. Use --api-key, set VAINU_API_KEY, or run `vainu login`.")
+            raise click.ClickException(
+                "API key required. Use --api-key, set VAINU_API_KEY, or run `vainu login`."
+            )
         return VainuAPIKeySyncClient(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -121,9 +123,7 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
         )
     if config.auth_method == "browser":
         if config.stored is None:
-            raise click.ClickException(
-                "No stored credentials. Run `vainu login` first."
-            )
+            raise click.ClickException("No stored credentials. Run `vainu login` first.")
         return VainuBrowserAuthSyncClient(
             stored=config.stored,
             store=config.store,
@@ -136,7 +136,9 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
 def _make_async_client(config: Config, language: str | None = None) -> AsyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
-            raise click.ClickException("API key required. Use --api-key, set VAINU_API_KEY, or run `vainu login`.")
+            raise click.ClickException(
+                "API key required. Use --api-key, set VAINU_API_KEY, or run `vainu login`."
+            )
         return VainuAPIKeyClient(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -166,9 +168,7 @@ def _make_async_client(config: Config, language: str | None = None) -> AsyncBase
         )
     if config.auth_method == "browser":
         if config.stored is None:
-            raise click.ClickException(
-                "No stored credentials. Run `vainu login` first."
-            )
+            raise click.ClickException("No stored credentials. Run `vainu login` first.")
         return VainuBrowserAuthAPIClient(
             stored=config.stored,
             store=config.store,

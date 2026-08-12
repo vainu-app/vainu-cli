@@ -10,7 +10,7 @@ import responses as resp
 from click.testing import CliRunner
 from conftest import BASE_URL, COMPANIES_RESPONSE, OAUTH_REVOKE_URL, OAUTH_TOKEN_URL
 
-from vainu_cli.auth.storage import StoredCredentials, TokenStore
+from vainu_cli.auth.storage import ClientCredentialsCache, StoredCredentials, TokenStore
 from vainu_cli.cli import main
 from vainu_cli.common import DEFAULT_AUTHORIZE_BASE_URL, PUBLIC_CLIENT_ID
 
@@ -171,6 +171,17 @@ class TestLogout:
         result = runner.invoke(main, ["logout"], catch_exceptions=False)
         assert result.exit_code == 0
         assert TokenStore().load() is None
+
+    def test_logout_clears_cached_client_credentials_tokens(self, runner, monkeypatch):
+        monkeypatch.delenv("VAINU_TOKEN_CACHE", raising=False)
+        cache = ClientCredentialsCache(base_url=BASE_URL, client_id="client-1", scope="vainu:api")
+        cache.save("cached-access-token", time.time() + 3600)
+
+        result = runner.invoke(main, ["logout"], catch_exceptions=False)
+
+        assert result.exit_code == 0
+        assert "Discarded 1 cached access token" in result.output
+        assert cache.load() is None
 
     @resp.activate
     def test_logout_all_revokes_server_side(self, runner):

@@ -261,6 +261,23 @@ class TestVainuOAuthAPIClientTokenManagement:
         token_calls = [c for c in respx.calls if "/oauth/token/" in str(c.request.url)]
         assert len(token_calls) == 2
 
+    @respx.mock
+    async def test_second_client_reuses_the_stored_token(self):
+        respx.post(f"{BASE_URL}/oauth/token/").mock(
+            return_value=httpx.Response(200, json=OAUTH_TOKEN_RESPONSE)
+        )
+        respx.post(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+
+        for _ in range(2):
+            client = VainuOAuthAPIClient(client_id="id", client_secret="secret", token_cache=True)
+            await client.companies(payload={"filter": {}})
+            await client.close()
+
+        token_calls = [c for c in respx.calls if "/oauth/token/" in str(c.request.url)]
+        assert len(token_calls) == 1
+
 
 # ── VainuJWTAPIClient ────────────────────────────────────────────────────────
 

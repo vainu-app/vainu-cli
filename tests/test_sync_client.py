@@ -3,6 +3,7 @@
 import time
 
 import pytest
+import requests
 import responses as resp
 from conftest import (
     ASYNC_JOB_ACCEPTED,
@@ -268,6 +269,74 @@ class TestVainuOAuthSyncClientTokenManagement:
 
         companies_call = resp.calls[1]
         assert companies_call.request.headers["Authorization"] == "Bearer test-access-token"
+
+
+class TestVainuOAuthSyncClientPersistentCache:
+    """Token reuse across client instances — i.e. across CLI invocations."""
+
+    @resp.activate
+    def test_second_client_reuses_the_stored_token(self):
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        VainuOAuthSyncClient(client_id="id", client_secret="secret", token_cache=True).companies(
+            payload={"filter": {}}
+        )
+        VainuOAuthSyncClient(client_id="id", client_secret="secret", token_cache=True).companies(
+            payload={"filter": {}}
+        )
+
+        token_calls = [c for c in resp.calls if "/oauth/token/" in c.request.url]
+        assert len(token_calls) == 1
+
+    @resp.activate
+    def test_disabled_cache_mints_a_token_per_client(self):
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        for _ in range(2):
+            VainuOAuthSyncClient(
+                client_id="id", client_secret="secret", token_cache=False
+            ).companies(payload={"filter": {}})
+
+        token_calls = [c for c in resp.calls if "/oauth/token/" in c.request.url]
+        assert len(token_calls) == 2
+
+    @resp.activate
+    def test_revoked_cached_token_is_dropped_and_retried_once(self):
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        # Second invocation: the cached token has been revoked server-side.
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json={"detail": "invalid"}, status=401)
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+
+        VainuOAuthSyncClient(client_id="id", client_secret="secret", token_cache=True).companies(
+            payload={"filter": {}}
+        )
+        result = VainuOAuthSyncClient(
+            client_id="id", client_secret="secret", token_cache=True
+        ).companies(payload={"filter": {}})
+
+        assert result == COMPANIES_RESPONSE
+        token_calls = [c for c in resp.calls if "/oauth/token/" in c.request.url]
+        assert len(token_calls) == 2
+
+    @resp.activate
+    def test_a_freshly_minted_token_is_not_retried(self):
+        """Bad credentials must surface, not double the API's 401 load."""
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json={"detail": "invalid"}, status=401)
+
+        client = VainuOAuthSyncClient(client_id="id", client_secret="secret", token_cache=True)
+        with pytest.raises(requests.HTTPError):
+            client.companies(payload={"filter": {}})
+
+        companies_calls = [c for c in resp.calls if "/v2/companies/" in c.request.url]
+        assert len(companies_calls) == 1
 
 
 # ── VainuJWTSyncClient ───────────────────────────────────────────────────────
