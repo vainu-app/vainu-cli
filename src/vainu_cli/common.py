@@ -1,6 +1,8 @@
 """Shared constants and types used by both sync and async clients."""
 
 import enum
+import http
+from collections.abc import Iterator
 from typing import Literal, Protocol, TypeAlias
 
 DEFAULT_BASE_URL = "https://api.vainu.io/api"
@@ -10,6 +12,9 @@ DEFAULT_RESPONSE_FORMAT: ResponseFormat = "json"
 RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "csv", "jsonl")
 # The Signals API renders json and jsonl only, so csv is not offered there.
 SIGNALS_RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "jsonl")
+# Line-oriented formats, the only ones a response body can be split on newlines.
+STREAMABLE_FORMATS: tuple[ResponseFormat, ...] = ("csv", "jsonl")
+DEFAULT_STREAM_FORMAT: ResponseFormat = "jsonl"
 # Per-request HTTP timeout (connect + read) for every client. Slow synchronous
 # searches stream their body for well over a minute, so keep this above the
 # API's own 120s ceiling rather than racing it.
@@ -47,6 +52,41 @@ def parse_response(response: ResponseLike, format: ResponseFormat) -> dict | lis
     if format == "json":
         return response.json()
     return response.text
+
+
+def ensure_streamable(format: ResponseFormat) -> None:
+    """Reject formats that cannot be consumed one line at a time.
+
+    A `json` response is a single document — the array or page object is only
+    valid once the last byte lands, so there is nothing to hand over early.
+    """
+    if format not in STREAMABLE_FORMATS:
+        raise ValueError(
+            f"format={format!r} cannot be streamed. Choose one of {', '.join(STREAMABLE_FORMATS)}."
+        )
+
+
+def lines_from_text(text: str) -> Iterator[str]:
+    """Split an already-read body into non-empty lines."""
+    for line in text.splitlines():
+        if line:
+            yield line
+
+
+def companies_request(
+    payload: dict | str,
+    format: ResponseFormat,
+) -> tuple[http.HTTPMethod, str, dict | None]:
+    """Resolve the companies endpoint call for a dict (POST) or query-string (GET) payload.
+
+    Shared so the buffered and streaming paths cannot drift apart.
+    """
+    path = "/v2/companies/"
+    if isinstance(payload, dict):
+        return http.HTTPMethod.POST, f"{path}?format={format}", payload
+    if isinstance(payload, str):
+        return http.HTTPMethod.GET, f"{path}{payload}&format={format}", None
+    raise ValueError("payload must be str or dict")
 
 
 class AsyncJobState(enum.StrEnum):

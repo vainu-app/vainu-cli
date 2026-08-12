@@ -175,6 +175,7 @@ Commands:
 --payload FILE/-     JSON payload file or "-" for stdin
 --payload-path FILE/-
 --format             json | csv | jsonl  (default: json)
+--stream/--no-stream Stream lines as they arrive (default on for csv/jsonl)
 --output FILE        Write to file instead of stdout
 ```
 
@@ -195,9 +196,32 @@ Submits an async export job, polls until complete, and downloads the result.
 ### `vainu organizations` / `vainu organizations-async`
 
 Same options as the company commands (organizations always use POST with a JSON payload).
+`organizations` takes `--stream` / `--no-stream` too; the `-async` export commands do not, since
+they already download to a file in chunks.
 
 `organizations` and `organizations-async` also accept `--payload-path` as an alias for
 `--payload`.
+
+### Streaming
+
+`--format jsonl` and `--format csv` **stream by default**: each line is written the moment it
+arrives, rather than the command sitting silent for a minute and then printing everything at
+once. Nothing larger than a single line is held in memory, so piping a large export into another
+tool costs almost nothing:
+
+```bash
+vainu organizations --payload payload.json --format jsonl | jq -r .business_id
+vainu signals-news --payload payload.json --format jsonl --output signals.jsonl
+```
+
+- `--format json` never streams — a JSON body is a single document and is not valid until its
+  last byte. Asking for `--stream --format json` is an error; leaving the flag off just buffers.
+- `--no-stream` forces the old buffered behaviour for `jsonl`/`csv`.
+- Works under both the default sync client and `--async-mode`.
+- With `csv`, the first line out is the header row.
+- Streaming drops blank lines and, with `--output`, always ends the file with a newline;
+  `--no-stream` copies the body verbatim, trailing byte included. The rows themselves are the
+  same either way.
 
 ### `vainu signals-news` / `vainu signals-data-changes`
 
@@ -209,6 +233,7 @@ changes in company records.
 --payload FILE/-     JSON payload file or "-" for stdin (required)
 --payload-path FILE/-
 --format             json | jsonl  (default: json)
+--stream/--no-stream Stream lines as they arrive (default on for jsonl)
 --language TEXT      Accept-Language header
 --output FILE        Write to file instead of stdout
 ```
@@ -352,7 +377,8 @@ vainu signals-news \
   --payload example_payloads/signals_api/01-news-signals-for-one-company.json
 ```
 
-Exports stream one signal per line with `--format jsonl`:
+`--format jsonl` writes one signal per line, streaming each one as it arrives (pass
+`--no-stream` to buffer the whole page instead):
 
 ```bash
 vainu signals-data-changes \
@@ -382,6 +408,10 @@ vainu signals-data-changes \
 | `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
 | `signals_news(payload, format)` | Fetch news signals (`list` for `json`, raw `str` for `jsonl`) |
 | `signals_data_changes(payload, format)` | Fetch data-change signals (`list` for `json`, raw `str` for `jsonl`) |
+| `stream_companies(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
+| `stream_organizations(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
+| `stream_signals_news(payload, format)` | Context manager → line iterator (`jsonl`) |
+| `stream_signals_data_changes(payload, format)` | Context manager → line iterator (`jsonl`) |
 | `close()` | Close HTTP connection |
 
 ### Sync clients
@@ -410,6 +440,40 @@ Search methods return parsed JSON only when `format="json"`. For `format="csv"` 
 without JSON re-encoding. The signals methods return a `list` under `format="json"` — the
 Signals API responds with a bare array rather than a page object — and accept `json`/`jsonl`
 only.
+
+### Streaming
+
+The `stream_*` methods are (async) context managers yielding an iterator of lines, so rows can
+be handled while the server is still producing them and no full body is ever held in memory.
+Lines arrive as `str` with the newline stripped and blank lines skipped; the response is
+released when the `with` block exits, even if you stop iterating early.
+
+```python
+import asyncio, json
+from vainu_cli import VainuOAuthAPIClient, VainuOAuthSyncClient
+
+# sync
+client = VainuOAuthSyncClient(client_id="...", client_secret="...")
+with client.stream_signals_news(payload={"query": {}}, format="jsonl") as lines:
+    for line in lines:
+        print(json.loads(line)["title"])
+client.close()
+
+# async
+async def main():
+    client = VainuOAuthAPIClient(client_id="...", client_secret="...")
+    async with client.stream_organizations(payload={"query": {}}, format="jsonl") as lines:
+        async for line in lines:
+            print(json.loads(line)["business_id"])
+    await client.close()
+
+asyncio.run(main())
+```
+
+`format` defaults to `jsonl` here and must be a line-oriented format — `format="json"` raises
+`ValueError`, since a single JSON document only becomes valid once its last byte lands. With
+`csv` the first line is the header row. Error bodies behave as they do on the buffered methods:
+`400`/`403`/`404` are yielded as the response text rather than raised, other failures raise.
 
 ---
 

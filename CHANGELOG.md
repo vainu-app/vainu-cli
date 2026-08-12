@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Line-by-line streaming on `companies`, `organizations`, `signals-news` and
+  `signals-data-changes`, **on by default** for `--format jsonl` and `csv`: each line is written
+  as it arrives instead of the whole body being buffered first. `--no-stream` restores the
+  buffered behaviour, and `--format json` still buffers (a single JSON document cannot be split
+  into lines)
+- `stream_companies` / `stream_organizations` / `stream_signals_news` /
+  `stream_signals_data_changes` on the async and sync clients: (async) context managers yielding
+  an iterator of lines, with the same auth-retry behaviour as the buffered methods
 - `vainu signals-news` — fetch news signals from the v3 Signals API (beta)
 - `vainu signals-data-changes` — fetch data-change signals from the v3 Signals API (beta)
 - `signals_news` / `signals_data_changes` on the async and sync clients, returning the API's
