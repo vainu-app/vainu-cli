@@ -160,10 +160,12 @@ Options:
   --version                         Show version and exit
 
 Commands:
-  companies            Fetch company data
-  companies-async      Export company data via async job
-  organizations        Fetch organization data
-  organizations-async  Export organization data via async job
+  companies             Fetch company data
+  companies-async       Export company data via async job
+  organizations         Fetch organization data
+  organizations-async   Export organization data via async job
+  signals-news          Fetch news signals
+  signals-data-changes  Fetch company data-change signals
 ```
 
 ### `vainu companies`
@@ -173,6 +175,7 @@ Commands:
 --payload FILE/-     JSON payload file or "-" for stdin
 --payload-path FILE/-
 --format             json | csv | jsonl  (default: json)
+--stream/--no-stream Stream lines as they arrive (default on for csv/jsonl)
 --output FILE        Write to file instead of stdout
 ```
 
@@ -193,9 +196,71 @@ Submits an async export job, polls until complete, and downloads the result.
 ### `vainu organizations` / `vainu organizations-async`
 
 Same options as the company commands (organizations always use POST with a JSON payload).
+`organizations` takes `--stream` / `--no-stream` too; the `-async` export commands do not, since
+they already download to a file in chunks.
 
 `organizations` and `organizations-async` also accept `--payload-path` as an alias for
 `--payload`.
+
+### Streaming
+
+`--format jsonl` and `--format csv` **stream by default**: each line is written the moment it
+arrives, rather than the command sitting silent for a minute and then printing everything at
+once. Nothing larger than a single line is held in memory, so piping a large export into another
+tool costs almost nothing:
+
+```bash
+vainu organizations --payload payload.json --format jsonl | jq -r .business_id
+vainu signals-news --payload payload.json --format jsonl --output signals.jsonl
+```
+
+- `--format json` never streams — a JSON body is a single document and is not valid until its
+  last byte. Asking for `--stream --format json` is an error; leaving the flag off just buffers.
+- `--no-stream` forces the old buffered behaviour for `jsonl`/`csv`.
+- Works under both the default sync client and `--async-mode`.
+- With `csv`, the first line out is the header row.
+- Streaming drops blank lines and, with `--output`, always ends the file with a newline;
+  `--no-stream` copies the body verbatim, trailing byte included. The rows themselves are the
+  same either way.
+
+### `vainu signals-news` / `vainu signals-data-changes`
+
+Fetch signals from the v3 Signals API (beta): `signals-news` returns externally sourced events
+(news, press releases, contract notices), `signals-data-changes` returns events generated from
+changes in company records.
+
+```
+--payload FILE/-     JSON payload file or "-" for stdin (required)
+--payload-path FILE/-
+--format             json | jsonl  (default: json)
+--stream/--no-stream Stream lines as they arrive (default on for jsonl)
+--language TEXT      Accept-Language header
+--output FILE        Write to file instead of stdout
+```
+
+Both endpoints require an OAuth or JWT token — **the v3 API does not accept a static API key**.
+Run `vainu login`, or set `VAINU_CLIENT_ID` / `VAINU_CLIENT_SECRET` and pass
+`--auth-method oauth`.
+
+Payload keys: `query` (required — see the
+[filtering query language](https://developers.vainu.com/v3/docs/filtering-query-language)),
+`limit` (default 20, capped at 100) and `offset` (capped at 100000). Notes worth knowing:
+
+- The response is a **bare JSON array**, newest first. There is no `count` or `next`, and
+  `order` is not supported — sending it returns `400 invalid order by value`.
+- `csv` is not available; use `--format jsonl` for exports and page with `limit`/`offset`
+  until a page returns fewer rows than `limit`.
+- Signal types are integer `tags` ids, shared by both endpoints and by the Vainu UI. The full
+  list is at
+  [`TAGS_BY_TYPE.json`](https://filter.vainu.io/filtervalues/en/TAGS_BY_TYPE.json).
+- Relative dates need **plural** units: `"30 days ago"` and `"1 years ago"` work, `"1 year ago"`
+  returns 400.
+- News signals can be filtered by `content`, `title`, `link`, `type` and `countries`;
+  data-change signals only by `tags`, `vainu_date`, `business_ids` and `prospects`.
+- `business_ids` takes country-prefixed ids (`FI25578642`) and supports `?IN` only.
+- An empty array means "nothing matched" *or* "the query timed out", and an unknown field name
+  is ignored rather than rejected — so always include a date bound and check field spelling
+  when a result looks too large or too empty.
 
 ---
 
@@ -289,6 +354,39 @@ vainu --auth-method oauth organizations \
   --payload example_payloads/organizations_api/09-simple-oauth-client-credentials-example.json
 ```
 
+### Signals API payloads
+
+Signals request bodies live under
+[`example_payloads/signals_api/`](https://github.com/vainu-app/vainu-cli/tree/main/example_payloads/signals_api).
+Each file is a complete POST body — `query`, `limit`, `offset` at the top level.
+
+| File | What it shows | Notes |
+|---|---|---|
+| [`01-news-signals-for-one-company.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/01-news-signals-for-one-company.json) | Every news signal for one company over the last year | Start here. Relative dates need plural units |
+| [`02-news-signals-by-tags.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/02-news-signals-by-tags.json) | Funding + M&A by signal type id | Values inside one `?IN` are OR-ed |
+| [`03-news-signals-excluding-tags.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/03-news-signals-excluding-tags.json) | Excluding a noisy type, keeping only tagged signals | `?NOT` alone also lets untagged signals through, hence `?EXISTS` |
+| [`04-news-signals-keyword-monitor.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/04-news-signals-keyword-monitor.json) | Keyword search over signal content in a date window | News only; matching starts at word boundaries |
+| [`05-data-changes-for-companies.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/05-data-changes-for-companies.json) | New financial statements and CEO changes for two companies | Data changes have no `countries` field and no text filtering |
+| [`06-data-changes-jsonl-paging.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/06-data-changes-jsonl-paging.json) | First page of a JSON Lines export | Raise `offset` by `limit` until a page is short |
+
+```bash
+export VAINU_CLIENT_ID=your-client-id
+export VAINU_CLIENT_SECRET=your-client-secret
+
+vainu signals-news \
+  --payload example_payloads/signals_api/01-news-signals-for-one-company.json
+```
+
+`--format jsonl` writes one signal per line, streaming each one as it arrives (pass
+`--no-stream` to buffer the whole page instead):
+
+```bash
+vainu signals-data-changes \
+  --payload example_payloads/signals_api/06-data-changes-jsonl-paging.json \
+  --format jsonl \
+  --output data_changes.jsonl
+```
+
 ---
 
 ## Python API
@@ -308,6 +406,12 @@ vainu --auth-method oauth organizations \
 | `companies_async(payload, format)` | Submit async job → `AsyncResult` |
 | `organizations(payload, format)` | Fetch organization data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
 | `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
+| `signals_news(payload, format)` | Fetch news signals (`list` for `json`, raw `str` for `jsonl`) |
+| `signals_data_changes(payload, format)` | Fetch data-change signals (`list` for `json`, raw `str` for `jsonl`) |
+| `stream_companies(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
+| `stream_organizations(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
+| `stream_signals_news(payload, format)` | Context manager → line iterator (`jsonl`) |
+| `stream_signals_data_changes(payload, format)` | Context manager → line iterator (`jsonl`) |
 | `close()` | Close HTTP connection |
 
 ### Sync clients
@@ -333,7 +437,43 @@ result.download_to_file(path)        # Download via streaming requests (sync)
 
 Search methods return parsed JSON only when `format="json"`. For `format="csv"` and
 `format="jsonl"`, they return the raw response text so the caller can write or stream it
-without JSON re-encoding.
+without JSON re-encoding. The signals methods return a `list` under `format="json"` — the
+Signals API responds with a bare array rather than a page object — and accept `json`/`jsonl`
+only.
+
+### Streaming
+
+The `stream_*` methods are (async) context managers yielding an iterator of lines, so rows can
+be handled while the server is still producing them and no full body is ever held in memory.
+Lines arrive as `str` with the newline stripped and blank lines skipped; the response is
+released when the `with` block exits, even if you stop iterating early.
+
+```python
+import asyncio, json
+from vainu_cli import VainuOAuthAPIClient, VainuOAuthSyncClient
+
+# sync
+client = VainuOAuthSyncClient(client_id="...", client_secret="...")
+with client.stream_signals_news(payload={"query": {}}, format="jsonl") as lines:
+    for line in lines:
+        print(json.loads(line)["title"])
+client.close()
+
+# async
+async def main():
+    client = VainuOAuthAPIClient(client_id="...", client_secret="...")
+    async with client.stream_organizations(payload={"query": {}}, format="jsonl") as lines:
+        async for line in lines:
+            print(json.loads(line)["business_id"])
+    await client.close()
+
+asyncio.run(main())
+```
+
+`format` defaults to `jsonl` here and must be a line-oriented format — `format="json"` raises
+`ValueError`, since a single JSON document only becomes valid once its last byte lands. With
+`csv` the first line is the header row. Error bodies behave as they do on the buffered methods:
+`400`/`403`/`404` are yielded as the response text rather than raised, other failures raise.
 
 ---
 

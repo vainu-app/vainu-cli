@@ -4,6 +4,8 @@ import asyncio
 import http
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -13,10 +15,14 @@ from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
+    DEFAULT_STREAM_FORMAT,
     DEFAULT_TIMEOUT_SECONDS,
     JWT_REFRESH_ENDPOINT_PATH,
     AsyncJobState,
     ResponseFormat,
+    companies_request,
+    ensure_streamable,
+    lines_from_text,
     parse_response,
 )
 
@@ -70,6 +76,36 @@ class AsyncResult:
             ) from exc
 
 
+async def _aiter_nonempty_lines(response: httpx.Response) -> AsyncIterator[str]:
+    async for line in response.aiter_lines():
+        if line:
+            yield line
+
+
+async def _aiter_lines_from_text(text: str) -> AsyncIterator[str]:
+    for line in lines_from_text(text):
+        yield line
+
+
+def _raise_for_status_with_body(response: httpx.Response) -> httpx.Response:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as err:
+        logger.error(
+            "HTTP error %s: %s — body: %s",
+            response.status_code,
+            err,
+            response.text,
+        )
+        if response.status_code not in (
+            http.HTTPStatus.BAD_REQUEST,
+            http.HTTPStatus.FORBIDDEN,
+            http.HTTPStatus.NOT_FOUND,
+        ):
+            raise
+    return response
+
+
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
     ASYNC_POLL_MAX_RETRIES = 5
@@ -93,7 +129,7 @@ class VainuAPIBaseClient:
         ):
             logger.debug("Access token rejected — retrying once with a fresh token")
             response = await self._send(method, path, **kwargs)
-        response.raise_for_status()
+        _raise_for_status_with_body(response)
         return response
 
     async def _send(self, method: http.HTTPMethod, path: str, **kwargs) -> httpx.Response:
@@ -106,6 +142,45 @@ class VainuAPIBaseClient:
             headers=headers,
             **kwargs,
         )
+
+    async def _send_stream(self, method: http.HTTPMethod, path: str, **kwargs) -> httpx.Response:
+        """Send a request but leave the body unread, so it can be consumed lazily."""
+        headers = await self.get_headers()
+        if self._language:
+            headers["Accept-Language"] = self._language
+        request = self._http.build_request(str(method), path, headers=headers, **kwargs)
+        return await self._http.send(request, stream=True)
+
+    @asynccontextmanager
+    async def stream(
+        self, method: http.HTTPMethod, path: str, **kwargs
+    ) -> AsyncIterator[AsyncIterator[str]]:
+        """Yield the response body one line at a time, as it arrives.
+
+        Same auth-retry contract as `request`, but the body is never buffered in
+        full — so a slow export can be written out while the server is still
+        producing it. The response is released when the context manager exits,
+        even if the caller stops iterating early.
+        """
+        logger.debug("Vainu API %s %s (streaming)", method, path)
+        response = await self._send_stream(method, path, **kwargs)
+        if response.status_code == http.HTTPStatus.UNAUTHORIZED and (
+            await self._invalidate_credentials()
+        ):
+            logger.debug("Access token rejected — retrying once with a fresh token")
+            await response.aclose()
+            response = await self._send_stream(method, path, **kwargs)
+        try:
+            if response.status_code >= http.HTTPStatus.BAD_REQUEST:
+                # .text is only available once the stream has been drained, and
+                # the body is an error payload rather than rows either way.
+                await response.aread()
+                _raise_for_status_with_body(response)
+                yield _aiter_lines_from_text(response.text)
+            else:
+                yield _aiter_nonempty_lines(response)
+        finally:
+            await response.aclose()
 
     async def _invalidate_credentials(self) -> bool:
         """Discard credentials the server just rejected with a 401.
@@ -196,25 +271,23 @@ class VainuAPIBaseClient:
         payload: dict | str,
         format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
     ) -> dict | str:
-        path = "/v2/companies/"
-        if isinstance(payload, dict):
-            return parse_response(
-                await self.request(
-                    method=http.HTTPMethod.POST,
-                    path=f"{path}?format={format}",
-                    json=payload,
-                ),
-                format,
-            )
-        if isinstance(payload, str):
-            return parse_response(
-                await self.request(
-                    method=http.HTTPMethod.GET,
-                    path=f"{path}{payload}&format={format}",
-                ),
-                format,
-            )
-        raise ValueError("payload must be str or dict")
+        method, path, json_body = companies_request(payload, format)
+        return parse_response(
+            await self.request(method=method, path=path, json=json_body),
+            format,
+        )
+
+    @asynccontextmanager
+    async def stream_companies(
+        self,
+        payload: dict | str,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> AsyncIterator[AsyncIterator[str]]:
+        """Stream company data line by line (`csv` / `jsonl` only)."""
+        ensure_streamable(format)
+        method, path, json_body = companies_request(payload, format)
+        async with self.stream(method=method, path=path, json=json_body) as lines:
+            yield lines
 
     async def organizations(
         self,
@@ -230,6 +303,21 @@ class VainuAPIBaseClient:
             format,
         )
 
+    @asynccontextmanager
+    async def stream_organizations(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> AsyncIterator[AsyncIterator[str]]:
+        """Stream organization data line by line (`csv` / `jsonl` only)."""
+        ensure_streamable(format)
+        async with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/organizations/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
+
     async def organizations_async(
         self,
         payload: dict,
@@ -241,6 +329,64 @@ class VainuAPIBaseClient:
             payload=payload,
             format=format,
         )
+
+    async def signals_news(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/signals/news/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    @asynccontextmanager
+    async def stream_signals_news(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> AsyncIterator[AsyncIterator[str]]:
+        """Stream news signals line by line (`jsonl` only — the API renders no csv)."""
+        ensure_streamable(format)
+        async with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/signals/news/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
+
+    async def signals_data_changes(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/signals/data-changes/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    @asynccontextmanager
+    async def stream_signals_data_changes(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> AsyncIterator[AsyncIterator[str]]:
+        """Stream data-change signals line by line (`jsonl` only)."""
+        ensure_streamable(format)
+        async with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/signals/data-changes/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -299,6 +445,7 @@ class VainuJWTAPIClient(VainuAPIBaseClient):
             refresh_url,
             json={"refresh": self.jwt_token},
         )
+        _raise_for_status_with_body(response)
         response.raise_for_status()
         data = response.json()
         self._access_token = data["access"]
@@ -312,7 +459,7 @@ class VainuOAuthAPIClient(VainuAPIBaseClient):
         self,
         client_id: str,
         client_secret: str,
-        scope: str = "api",
+        scope: str = "vainu:api",
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
         token_cache: bool | None = None,

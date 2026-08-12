@@ -12,11 +12,17 @@ from conftest import (
     ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
+    CSV_RESPONSE,
     JSONL_RESPONSE,
+    JSONL_STREAM_LINES,
+    JSONL_STREAM_RESPONSE,
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    SIGNALS_DATA_CHANGES_RESPONSE,
+    SIGNALS_JSONL_RESPONSE,
+    SIGNALS_NEWS_RESPONSE,
 )
 
 from vainu_cli._sync_client import (
@@ -203,6 +209,132 @@ class TestVainuAPIKeySyncClientOrganizations:
         assert result == JSONL_RESPONSE
 
 
+class TestVainuAPIKeySyncClientSignals:
+    @resp.activate
+    def test_signals_news_post_returns_list(self):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/?format=json", json=SIGNALS_NEWS_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_news(payload={"query": {"?ALL": [{"?IN": {"tags": [43543]}}]}})
+        assert isinstance(result, list)
+        assert result[0]["tags"] == [{"id": 43543, "value": "Funding"}]
+
+    @resp.activate
+    def test_signals_news_post_uses_explicit_format(self):
+        resp.add(
+            resp.POST, f"{BASE_URL}/v3/signals/news/?format=jsonl", body=SIGNALS_JSONL_RESPONSE
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_news(payload={"query": {}}, format="jsonl")
+        assert result == SIGNALS_JSONL_RESPONSE
+
+    @resp.activate
+    def test_signals_data_changes_post_returns_list(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/?format=json",
+            json=SIGNALS_DATA_CHANGES_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_data_changes(payload={"query": {}})
+        assert isinstance(result, list)
+        assert result[0]["dynamic_values"][0]["key"] == "new_financial_statement"
+
+    @resp.activate
+    def test_signals_data_changes_post_uses_explicit_format(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/?format=jsonl",
+            body=SIGNALS_JSONL_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_data_changes(payload={"query": {}}, format="jsonl")
+        assert result == SIGNALS_JSONL_RESPONSE
+
+
+class TestVainuAPIKeySyncClientStreaming:
+    @resp.activate
+    def test_stream_signals_news_yields_lines(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_signals_news(payload={"query": {}}) as lines:
+            assert list(lines) == JSONL_STREAM_LINES
+
+    @resp.activate
+    def test_stream_signals_data_changes_yields_lines(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_signals_data_changes(payload={"query": {}}) as lines:
+            assert list(lines) == JSONL_STREAM_LINES
+
+    @resp.activate
+    def test_stream_organizations_yields_lines(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=jsonl",
+            body=JSONL_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_organizations(payload={"query": {}}) as lines:
+            assert list(lines) == JSONL_RESPONSE.splitlines()
+
+    @resp.activate
+    def test_stream_companies_post_yields_csv_lines(self):
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/?format=csv", body=CSV_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_companies(payload={"filter": {}}, format="csv") as lines:
+            rows = list(lines)
+        assert rows[0] == "business_id,name"
+        assert rows == CSV_RESPONSE.splitlines()
+
+    @resp.activate
+    def test_stream_companies_accepts_query_string_payload(self):
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/", body=JSONL_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_companies(payload="?country=FI") as lines:
+            assert list(lines) == JSONL_RESPONSE.splitlines()
+        assert "format=jsonl" in resp.calls[0].request.url
+
+    def test_stream_rejects_json_format(self):
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(ValueError, match="cannot be streamed"):  # noqa: SIM117
+            with client.stream_signals_news(payload={"query": {}}, format="json"):
+                pass
+
+    @resp.activate
+    def test_stream_yields_swallowed_error_body(self):
+        """400/403/404 bodies are returned rather than raised, as in the buffered path."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            json={"detail": "invalid order by value"},
+            status=400,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_signals_news(payload={"query": {}}) as lines:
+            assert list(lines) == ['{"detail": "invalid order by value"}']
+
+    @resp.activate
+    def test_stream_raises_on_server_error(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            json={"detail": "boom"},
+            status=500,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(requests.HTTPError):  # noqa: SIM117
+            with client.stream_signals_news(payload={"query": {}}):
+                pass
+
+
 # ── VainuOAuthSyncClient ─────────────────────────────────────────────────────
 
 
@@ -337,6 +469,29 @@ class TestVainuOAuthSyncClientPersistentCache:
 
         companies_calls = [c for c in resp.calls if "/v2/companies/" in c.request.url]
         assert len(companies_calls) == 1
+
+    @resp.activate
+    def test_streaming_retries_once_on_a_revoked_cached_token(self):
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/",
+            json={"detail": "invalid"},
+            status=401,
+        )
+        resp.add(resp.POST, f"{BASE_URL}/oauth/token/", json=OAUTH_TOKEN_RESPONSE)
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/", body=JSONL_RESPONSE)
+
+        VainuOAuthSyncClient(client_id="id", client_secret="secret", token_cache=True).companies(
+            payload={"filter": {}}
+        )
+        client = VainuOAuthSyncClient(client_id="id", client_secret="secret", token_cache=True)
+        with client.stream_organizations(payload={"query": {}}) as lines:
+            assert list(lines) == JSONL_RESPONSE.splitlines()
+
+        org_calls = [c for c in resp.calls if "/v3/organizations/" in c.request.url]
+        assert len(org_calls) == 2
 
 
 # ── VainuJWTSyncClient ───────────────────────────────────────────────────────

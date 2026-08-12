@@ -3,15 +3,23 @@
 import json
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 import responses as resp
+import respx
 from click.testing import CliRunner
 from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
+    CSV_RESPONSE,
     JSONL_RESPONSE,
+    JSONL_STREAM_LINES,
+    JSONL_STREAM_RESPONSE,
     JWT_REFRESH_URL,
     ORGANIZATIONS_RESPONSE,
+    SIGNALS_DATA_CHANGES_RESPONSE,
+    SIGNALS_JSONL_RESPONSE,
+    SIGNALS_NEWS_RESPONSE,
 )
 
 from vainu_cli.cli import main
@@ -398,7 +406,8 @@ class TestOrganizationsSearch:
         assert result.output == f"{JSONL_RESPONSE}\n"
 
     @resp.activate
-    def test_organizations_search_writes_raw_jsonl_to_file(self, runner, tmp_path):
+    def test_organizations_search_writes_jsonl_to_file(self, runner, tmp_path):
+        """jsonl streams by default, so the file is newline-terminated."""
         resp.add(
             resp.POST,
             f"{BASE_URL}/v3/organizations/?format=jsonl",
@@ -415,6 +424,35 @@ class TestOrganizationsSearch:
                 "-",
                 "--format",
                 "jsonl",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": "vainu"}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == f"{JSONL_RESPONSE}\n"
+
+    @resp.activate
+    def test_organizations_search_no_stream_writes_raw_jsonl_to_file(self, runner, tmp_path):
+        """--no-stream buffers and copies the body verbatim, trailing byte included."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=jsonl",
+            body=JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "organizations.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--no-stream",
                 "--output",
                 str(output_file),
             ],
@@ -492,6 +530,349 @@ class TestOrganizationsExport:
 
         assert result.exit_code == 0
         assert "Result exists in result_url:" in result.output
+
+
+# ── signals ───────────────────────────────────────────────────────────────────
+
+
+class TestSignalsNews:
+    @resp.activate
+    def test_signals_news_with_payload_stdin(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/", json=SIGNALS_NEWS_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-"],
+            input='{"query": {"?ALL": [{"?IN": {"tags": [43543]}}]}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["id"] == "65f0a1b2c3d4e5f6a7b8c9d0"
+
+    def test_signals_news_requires_payload(self, runner):
+        result = runner.invoke(main, ["--api-key", "test-key", "signals-news"])
+        assert result.exit_code != 0
+
+    @resp.activate
+    def test_signals_news_payload_path_alias(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=json",
+            json=SIGNALS_NEWS_RESPONSE,
+        )
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"query": {}}')
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload-path", str(payload_file)],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+    @resp.activate
+    def test_signals_news_writes_jsonl_to_file(self, runner, tmp_path):
+        """jsonl streams by default, so the file is newline-terminated."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=SIGNALS_JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "signals.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "signals-news",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == f"{SIGNALS_JSONL_RESPONSE}\n"
+
+    @resp.activate
+    def test_signals_news_no_stream_writes_raw_jsonl_to_file(self, runner, tmp_path):
+        """--no-stream buffers and copies the body verbatim, trailing byte included."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=SIGNALS_JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "signals.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "signals-news",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--no-stream",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == SIGNALS_JSONL_RESPONSE
+
+    def test_signals_news_rejects_csv_format(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-", "--format", "csv"],
+            input='{"query": {}}',
+        )
+        assert result.exit_code != 0
+        assert "csv" in result.output
+
+    @resp.activate
+    def test_task_duration_is_logged_at_debug(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/", json=SIGNALS_NEWS_RESPONSE)
+        with patch("vainu_cli.cli.logger.debug") as mock_debug:
+            result = runner.invoke(
+                main,
+                ["-v", "--api-key", "test-key", "signals-news", "--payload", "-"],
+                input='{"query": {}}',
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        mock_debug.assert_any_call("Task '%s' %s in %.3fs", "signals-news", "completed", ANY)
+
+
+class TestSignalsDataChanges:
+    @resp.activate
+    def test_signals_data_changes_with_payload_stdin(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/",
+            json=SIGNALS_DATA_CHANGES_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-data-changes", "--payload", "-"],
+            input='{"query": {"?ALL": [{"?IN": {"tags": [8000037]}}]}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["dynamic_values"][0]["key"] == "new_financial_statement"
+
+    def test_signals_data_changes_requires_payload(self, runner):
+        result = runner.invoke(main, ["--api-key", "test-key", "signals-data-changes"])
+        assert result.exit_code != 0
+
+    def test_signals_data_changes_async_mode_uses_async_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.signals_data_changes = AsyncMock(return_value=SIGNALS_DATA_CHANGES_RESPONSE)
+            instance.close = AsyncMock()
+
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "--async-mode",
+                    "signals-data-changes",
+                    "--payload",
+                    "-",
+                ],
+                input='{"query": {}}',
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        instance.signals_data_changes.assert_awaited_once_with(payload={"query": {}}, format="json")
+
+
+# ── --stream ──────────────────────────────────────────────────────────────────
+
+
+class TestStreaming:
+    @resp.activate
+    def test_jsonl_streams_without_an_explicit_flag(self, runner):
+        """Streaming is the default for line-oriented formats."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-", "--format", "jsonl"],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        # Blank lines are dropped on the streaming path but kept by a buffered echo.
+        assert result.output.splitlines() == JSONL_STREAM_LINES
+
+    @resp.activate
+    def test_no_stream_buffers_the_body(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "signals-news",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--no-stream",
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert result.output == f"{JSONL_STREAM_RESPONSE}\n"
+
+    @resp.activate
+    def test_json_does_not_stream_by_default(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/", json=SIGNALS_NEWS_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-"],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.output)[0]["id"] == "65f0a1b2c3d4e5f6a7b8c9d0"
+
+    @resp.activate
+    def test_csv_streams_by_default(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/?format=csv", body=CSV_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations", "--payload", "-", "--format", "csv"],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert result.output.splitlines() == CSV_RESPONSE.splitlines()
+
+    @resp.activate
+    def test_signals_news_stream_writes_lines_to_stdout(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "signals-news",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--stream",
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert result.output.splitlines() == JSONL_STREAM_LINES
+
+    @resp.activate
+    def test_signals_news_stream_writes_lines_to_file(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        output_file = tmp_path / "signals.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "signals-news",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--stream",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == "".join(f"{line}\n" for line in JSONL_STREAM_LINES)
+
+    @resp.activate
+    def test_organizations_stream_csv(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/?format=csv", body=CSV_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "csv",
+                "--stream",
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert result.output.splitlines() == CSV_RESPONSE.splitlines()
+
+    def test_stream_rejects_json_format(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-", "--stream"],
+            input='{"query": {}}',
+        )
+        assert result.exit_code != 0
+        assert "--stream requires --format" in result.output
+
+    def test_signals_news_stream_async_mode(self, runner):
+        with respx.mock:
+            respx.post(f"{BASE_URL}/v3/signals/news/?format=jsonl").mock(
+                return_value=httpx.Response(200, text=JSONL_STREAM_RESPONSE)
+            )
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "--async-mode",
+                    "signals-news",
+                    "--payload",
+                    "-",
+                    "--format",
+                    "jsonl",
+                    "--stream",
+                ],
+                input='{"query": {}}',
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+        assert result.output.splitlines() == JSONL_STREAM_LINES
 
 
 # ── --version ─────────────────────────────────────────────────────────────────
