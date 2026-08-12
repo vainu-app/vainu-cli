@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 
 import httpx
 
+from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
@@ -86,17 +87,33 @@ class VainuAPIBaseClient:
     async def request(self, method: http.HTTPMethod, path: str, **kwargs) -> httpx.Response:
         """Make an authenticated request."""
         logger.debug("Vainu API %s %s", method, path)
+        response = await self._send(method, path, **kwargs)
+        if response.status_code == http.HTTPStatus.UNAUTHORIZED and (
+            await self._invalidate_credentials()
+        ):
+            logger.debug("Access token rejected — retrying once with a fresh token")
+            response = await self._send(method, path, **kwargs)
+        response.raise_for_status()
+        return response
+
+    async def _send(self, method: http.HTTPMethod, path: str, **kwargs) -> httpx.Response:
         headers = await self.get_headers()
         if self._language:
             headers["Accept-Language"] = self._language
-        response = await self._http.request(
+        return await self._http.request(
             method,
             path,
             headers=headers,
             **kwargs,
         )
-        response.raise_for_status()
-        return response
+
+    async def _invalidate_credentials(self) -> bool:
+        """Discard credentials the server just rejected with a 401.
+
+        Returns True when something was dropped and the request is worth
+        retrying — only clients that reuse a persisted token override this.
+        """
+        return False
 
     async def request_api_async(
         self,
@@ -298,6 +315,7 @@ class VainuOAuthAPIClient(VainuAPIBaseClient):
         scope: str = "api",
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
+        token_cache: bool | None = None,
     ) -> None:
         super().__init__(base_url=base_url, language=language)
         if not client_id or not client_secret:
@@ -310,14 +328,27 @@ class VainuOAuthAPIClient(VainuAPIBaseClient):
         self.scope = scope
         self._access_token: str | None = None
         self._token_expires_at: float = 0
+        self._token_from_cache = False
+        self._cache = ClientCredentialsCache(
+            base_url=base_url,
+            client_id=client_id,
+            scope=scope,
+            enabled=token_cache,
+        )
 
     async def get_headers(self) -> dict:
         await self._ensure_token()
         return {"Authorization": f"Bearer {self._access_token}"}
 
     async def _ensure_token(self) -> None:
-        """Fetch a new token if missing or expiring within 60 seconds."""
+        """Reuse a live token — in memory, then from the store — else mint one."""
         if self._access_token and time.time() < self._token_expires_at - 60:
+            return
+        # keyring talks to the OS over D-Bus / Security.framework and blocks.
+        cached = await asyncio.to_thread(self._cache.load)
+        if cached is not None:
+            self._access_token, self._token_expires_at = cached
+            self._token_from_cache = True
             return
         response = await self._http.post(
             "/oauth/token/",
@@ -332,3 +363,20 @@ class VainuOAuthAPIClient(VainuAPIBaseClient):
         data = response.json()
         self._access_token = data["access_token"]
         self._token_expires_at = time.time() + data["expires_in"]
+        self._token_from_cache = False
+        await asyncio.to_thread(self._cache.save, self._access_token, self._token_expires_at)
+
+    async def _invalidate_credentials(self) -> bool:
+        """Drop a rejected token, and retry only if it came from the store.
+
+        A cached token can be revoked server-side while it still looks live to
+        us; one that was minted moments ago and still draws a 401 means the
+        credentials are wrong, so retrying would just burn another round-trip.
+        """
+        if not self._token_from_cache:
+            return False
+        self._access_token = None
+        self._token_expires_at = 0
+        self._token_from_cache = False
+        await asyncio.to_thread(self._cache.clear)
+        return True

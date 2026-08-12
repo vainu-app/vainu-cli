@@ -56,8 +56,7 @@ class VainuBrowserAuthSyncClient(VainuJWTSyncClient):
             return
         if not self._stored.refresh_token:
             raise RuntimeError(
-                "Access token expired and no refresh token is available. "
-                "Run `vainu login` again."
+                "Access token expired and no refresh token is available. Run `vainu login` again."
             )
         response = self._http.post(
             f"{self._base_url.rstrip('/')}{OAUTH_TOKEN_ENDPOINT}",
@@ -71,9 +70,7 @@ class VainuBrowserAuthSyncClient(VainuJWTSyncClient):
         )
         response.raise_for_status()
         data = response.json()
-        _apply_refreshed_tokens(
-            self._stored, data, fallback_refresh=self._stored.refresh_token
-        )
+        _apply_refreshed_tokens(self._stored, data, fallback_refresh=self._stored.refresh_token)
         self._access_token = self._stored.access_token
         self._token_expires_at = self._stored.expires_at
         if self._store is not None:
@@ -109,8 +106,7 @@ class VainuBrowserAuthAPIClient(VainuJWTAPIClient):
             return
         if not self._stored.refresh_token:
             raise RuntimeError(
-                "Access token expired and no refresh token is available. "
-                "Run `vainu login` again."
+                "Access token expired and no refresh token is available. Run `vainu login` again."
             )
         response = await self._http.post(
             OAUTH_TOKEN_ENDPOINT,
@@ -123,9 +119,7 @@ class VainuBrowserAuthAPIClient(VainuJWTAPIClient):
         )
         response.raise_for_status()
         data = response.json()
-        _apply_refreshed_tokens(
-            self._stored, data, fallback_refresh=self._stored.refresh_token
-        )
+        _apply_refreshed_tokens(self._stored, data, fallback_refresh=self._stored.refresh_token)
         self._access_token = self._stored.access_token
         self._token_expires_at = self._stored.expires_at
         if self._store is not None:
