@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterable, Callable, Iterable
 from dataclasses import dataclass
 from functools import wraps
 from time import perf_counter
@@ -45,6 +45,7 @@ from vainu_cli.common import (
     PUBLIC_CLIENT_ID,
     RESPONSE_FORMATS,
     SIGNALS_RESPONSE_FORMATS,
+    STREAMABLE_FORMATS,
     ResponseFormat,
 )
 
@@ -270,6 +271,54 @@ def _write_output(data: dict | list | str, output: str | None) -> None:
         click.echo(text)
 
 
+def _write_output_stream(lines: Iterable[str], output: str | None) -> None:
+    """Write lines as they arrive, so a slow export reports progress as it runs."""
+    if output:
+        with open(output, "w") as fh:
+            for line in lines:
+                fh.write(f"{line}\n")
+        click.echo(f"Written to {output}", err=True)
+    else:
+        for line in lines:
+            click.echo(line)
+
+
+async def _write_output_stream_async(lines: AsyncIterable[str], output: str | None) -> None:
+    if output:
+        with open(output, "w") as fh:
+            async for line in lines:
+                fh.write(f"{line}\n")
+        click.echo(f"Written to {output}", err=True)
+    else:
+        async for line in lines:
+            click.echo(line)
+
+
+def _streamable(formats: tuple[ResponseFormat, ...]) -> tuple[ResponseFormat, ...]:
+    """The line-oriented subset of a command's formats — signals offer no csv."""
+    return tuple(fmt for fmt in formats if fmt in STREAMABLE_FORMATS)
+
+
+def _resolve_stream(
+    stream: bool | None,
+    fmt: ResponseFormat,
+    formats: tuple[ResponseFormat, ...] = RESPONSE_FORMATS,
+) -> bool:
+    """Decide whether to stream: on by default for line-oriented formats.
+
+    `stream` is None when neither --stream nor --no-stream was passed.
+    """
+    streamable = _streamable(formats)
+    if stream is None:
+        return fmt in streamable
+    if stream and fmt not in streamable:
+        raise click.UsageError(
+            f"--stream requires --format {' or '.join(streamable)} — "
+            f"a {fmt} response is a single document and cannot be split into lines."
+        )
+    return stream
+
+
 def _option_query(func: F) -> F:
     return click.option("--query", default=None, help="Query string (e.g. '?country=FI').")(func)
 
@@ -310,6 +359,18 @@ def _option_signals_format(func: F) -> F:
         show_default=True,
         help="Response format.",
     )(func)
+
+
+def _option_stream(
+    formats: tuple[ResponseFormat, ...] = RESPONSE_FORMATS,
+) -> Callable[[F], F]:
+    streamable = " or ".join(_streamable(formats))
+    return click.option(
+        "--stream/--no-stream",
+        default=None,
+        help=f"Emit each line as it arrives instead of buffering the whole body. On by default "
+        f"for --format {streamable}; pass --no-stream to buffer instead.",
+    )
 
 
 def _option_language(func: F) -> F:
@@ -466,6 +527,7 @@ def main(
 @_option_query
 @_option_payload(required=False)
 @_option_filter_base
+@_option_stream()
 @_option_output(required=False)
 @click.pass_obj
 @_timed_task("companies")
@@ -475,10 +537,34 @@ def companies_search(
     payload_path: str | None,
     fmt: ResponseFormat,
     language: str | None,
+    stream: bool | None,
     output: str | None,
 ) -> None:
     """Fetch company data (synchronous paginated result)."""
+    stream = _resolve_stream(stream, fmt)
     payload = _load_payload(query, payload_path)
+
+    if stream:
+        if config.async_mode:
+
+            async def _run_stream() -> None:
+                client = _make_async_client(config, language=language)
+                try:
+                    async with client.stream_companies(payload=payload, format=fmt) as lines:
+                        await _write_output_stream_async(lines, output)
+                finally:
+                    await client.close()
+
+            asyncio.run(_run_stream())
+        else:
+            client = _make_sync_client(config, language=language)
+            try:
+                with client.stream_companies(payload=payload, format=fmt) as lines:
+                    _write_output_stream(lines, output)
+            finally:
+                client.close()
+        return
+
     if config.async_mode:
 
         async def _run() -> dict:
@@ -543,6 +629,7 @@ def companies_export(
 @main.command("organizations")
 @_option_payload(required=True)
 @_option_filter_base
+@_option_stream()
 @_option_output(required=False)
 @click.pass_obj
 @_timed_task("organizations")
@@ -551,10 +638,33 @@ def organizations_search(
     payload_path: str,
     fmt: ResponseFormat,
     language: str | None,
+    stream: bool | None,
     output: str | None,
 ) -> None:
     """Fetch organization data (POST with JSON payload)."""
+    stream = _resolve_stream(stream, fmt)
     payload = _load_payload_file(payload_path)
+
+    if stream:
+        if config.async_mode:
+
+            async def _run_stream() -> None:
+                client = _make_async_client(config, language=language)
+                try:
+                    async with client.stream_organizations(payload=payload, format=fmt) as lines:
+                        await _write_output_stream_async(lines, output)
+                finally:
+                    await client.close()
+
+            asyncio.run(_run_stream())
+        else:
+            client = _make_sync_client(config, language=language)
+            try:
+                with client.stream_organizations(payload=payload, format=fmt) as lines:
+                    _write_output_stream(lines, output)
+            finally:
+                client.close()
+        return
 
     if config.async_mode:
 
@@ -618,6 +728,7 @@ def organizations_export(
 @main.command("signals-news")
 @_option_payload(required=True)
 @_option_signals_base
+@_option_stream(SIGNALS_RESPONSE_FORMATS)
 @_option_output(required=False)
 @click.pass_obj
 @_timed_task("signals-news")
@@ -626,10 +737,33 @@ def signals_news_search(
     payload_path: str,
     fmt: ResponseFormat,
     language: str | None,
+    stream: bool | None,
     output: str | None,
 ) -> None:
     """Fetch news signals (POST with JSON payload)."""
+    stream = _resolve_stream(stream, fmt, SIGNALS_RESPONSE_FORMATS)
     payload = _load_payload_file(payload_path)
+
+    if stream:
+        if config.async_mode:
+
+            async def _run_stream() -> None:
+                client = _make_async_client(config, language=language)
+                try:
+                    async with client.stream_signals_news(payload=payload, format=fmt) as lines:
+                        await _write_output_stream_async(lines, output)
+                finally:
+                    await client.close()
+
+            asyncio.run(_run_stream())
+        else:
+            client = _make_sync_client(config, language=language)
+            try:
+                with client.stream_signals_news(payload=payload, format=fmt) as lines:
+                    _write_output_stream(lines, output)
+            finally:
+                client.close()
+        return
 
     if config.async_mode:
 
@@ -653,6 +787,7 @@ def signals_news_search(
 @main.command("signals-data-changes")
 @_option_payload(required=True)
 @_option_signals_base
+@_option_stream(SIGNALS_RESPONSE_FORMATS)
 @_option_output(required=False)
 @click.pass_obj
 @_timed_task("signals-data-changes")
@@ -661,10 +796,35 @@ def signals_data_changes_search(
     payload_path: str,
     fmt: ResponseFormat,
     language: str | None,
+    stream: bool | None,
     output: str | None,
 ) -> None:
     """Fetch data-change signals (POST with JSON payload)."""
+    stream = _resolve_stream(stream, fmt, SIGNALS_RESPONSE_FORMATS)
     payload = _load_payload_file(payload_path)
+
+    if stream:
+        if config.async_mode:
+
+            async def _run_stream() -> None:
+                client = _make_async_client(config, language=language)
+                try:
+                    async with client.stream_signals_data_changes(
+                        payload=payload, format=fmt
+                    ) as lines:
+                        await _write_output_stream_async(lines, output)
+                finally:
+                    await client.close()
+
+            asyncio.run(_run_stream())
+        else:
+            client = _make_sync_client(config, language=language)
+            try:
+                with client.stream_signals_data_changes(payload=payload, format=fmt) as lines:
+                    _write_output_stream(lines, output)
+            finally:
+                client.close()
+        return
 
     if config.async_mode:
 

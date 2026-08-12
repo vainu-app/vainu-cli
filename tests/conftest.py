@@ -105,6 +105,20 @@ JSONL_RESPONSE = (
     '{"business_id":"FI99999999","name":"Another Org"}'
 )
 
+# Blank lines and non-ASCII content, to pin line filtering and UTF-8 decoding in
+# the streaming paths — requests guesses ISO-8859-1 when a charset is missing.
+JSONL_STREAM_RESPONSE = (
+    '{"id":"1","title":"Höyrytys Oy rakentaa tuotantolaitoksen"}\n'
+    "\n"
+    '{"id":"2","title":"Alva-yhtiöt Oy kilpailuttaa puhtaanapidon"}\n'
+)
+JSONL_STREAM_LINES = [
+    '{"id":"1","title":"Höyrytys Oy rakentaa tuotantolaitoksen"}',
+    '{"id":"2","title":"Alva-yhtiöt Oy kilpailuttaa puhtaanapidon"}',
+]
+
+CSV_RESPONSE = "business_id,name\nFI01320292,Test Org\nFI99999999,Another Org\n"
+
 ASYNC_JOB_ACCEPTED = {"state": "accepted", "progress": 0}
 ASYNC_JOB_PROCESS = {"state": "process", "progress": 50}
 ASYNC_JOB_COMPLETED = {
