@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "recipe": "Simple Filtering Example Using Organizations API",
+    "source_url": "https://developers.vainu.com/v3/recipes/simple-filtering-example-using-v3organizations",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/"
+  },
+  "query": { "?EQ": { "business_id": "FI05381340" } },
+  "fields": ["business_id", "name", "legal_entity"],
+  "database": "FI",
+  "limit": 1
+}

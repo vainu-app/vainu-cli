@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "recipe": "Simple Fuzzy Search API",
+    "source_url": "https://developers.vainu.com/v3/recipes/recipe-title",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/search/"
+  },
+  "search": "volvo",
+  "fields": ["business_id", "name", "website"],
+  "database": "SE",
+  "limit": 5
+}

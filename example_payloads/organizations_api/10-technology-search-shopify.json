@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "recipe": "Technology Search - Shopify",
+    "source_url": "https://developers.vainu.com/v3/recipes/technology-search-shopify",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/"
+  },
+  "query": { "?STARTSWITH": { "technology_data.name": "shopify" } },
+  "fields": ["business_id", "name", "technology_data"],
+  "database": "FI",
+  "limit": 20
+}

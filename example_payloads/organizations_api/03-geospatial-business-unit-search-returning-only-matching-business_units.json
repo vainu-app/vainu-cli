@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "recipe": "Geospatial Business Unit Search Returning Only Matching business_units",
+    "source_url": "https://developers.vainu.com/v3/recipes/geospatial-business-unit-search-returing-only-matching-business_units",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/",
+    "note": "radius is in radians = radius_in_meters / 6371000. Example below uses radius_in_meters = 1000 (1km around Uppsala Castle, Sweden)."
+  },
+  "query": {
+    "?ALL": [
+      {
+        "?GEO_WITHIN_SPHERE": {
+          "business_units.visiting_address.coordinates": {
+            "coordinates": [17.634966, 59.853642],
+            "radius": 0.0001569612305760477
+          }
+        }
+      }
+    ]
+  },
+  "unwind_subdocument": "business_units",
+  "unwind_subdocument_query": {
+    "?GEO_WITHIN_SPHERE": {
+      "business_units.visiting_address.coordinates": {
+        "coordinates": [17.634966, 59.853642],
+        "radius": 0.0001569612305760477
+      }
+    }
+  },
+  "unwind_subdocument_limit": null,
+  "fields": [
+    "business_id",
+    "business_units.office_name",
+    "business_units.visiting_address.city",
+    "business_units.visiting_address.coordinates"
+  ],
+  "database": "SE",
+  "limit": 10
+}

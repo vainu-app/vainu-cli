@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "recipe": "Filter Contacts - Return Only CEO or Privacy Officers Of Companies",
+    "source_url": "https://developers.vainu.com/v3/recipes/filter-contacts-return-only-ceos-of-companies",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/"
+  },
+  "query": { "?EQ": { "business_id": "FI25578642" } },
+  "fields": [
+    "business_id",
+    "name",
+    "founded",
+    "contacts.titles",
+    "contacts.first_name"
+  ],
+  "database": "FI",
+  "limit": 10,
+  "aggregation": [
+    {
+      "id": "contacts",
+      "?AGGREGATE": [
+        {
+          "?FILTER_SUBDOCUMENTS": {
+            "path": "contacts",
+            "query": {
+              "?ANY": [
+                {
+                  "?IN": {
+                    "titles.classifications.functional_area": ["CEO"]
+                  }
+                },
+                {
+                  "?ICONTAINS": {
+                    "titles.title": "Privacy Officer"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        { "?SELECT": { "path": "contacts" } }
+      ]
+    }
+  ]
+}

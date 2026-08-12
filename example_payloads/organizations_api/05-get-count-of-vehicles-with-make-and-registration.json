@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "recipe": "Get Count of Vehicles with Make and Registration to CSV",
+    "source_url": "https://developers.vainu.com/v3/recipes/get-count-of-vehicles-with-make-and-registration",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/?format=csv"
+  },
+  "query": {
+    "?MATCH": {
+      "vehicles": {
+        "?ALL": [
+          { "?EQ": { "make": "SKODA" } },
+          { "?GT": { "first_registered": "2020-01-01" } }
+        ]
+      }
+    }
+  },
+  "fields": ["name", "business_id", "?exact_skoda_count"],
+  "aggregation": [
+    {
+      "id": "exact_skoda_count",
+      "?AGGREGATE": [
+        {
+          "?FILTER_SUBDOCUMENTS": {
+            "path": "vehicles",
+            "query": {
+              "?ALL": [
+                { "?EQ": { "make": "SKODA" } },
+                { "?GT": { "first_registered": "2020-01-01" } }
+              ]
+            }
+          }
+        },
+        { "?COUNT": { "path": "vehicles" } }
+      ]
+    }
+  ],
+  "limit": 1000000,
+  "database": "SE"
+}
