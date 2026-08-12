@@ -3,6 +3,8 @@
 import http
 import logging
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -12,10 +14,14 @@ from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
+    DEFAULT_STREAM_FORMAT,
     DEFAULT_TIMEOUT_SECONDS,
     JWT_REFRESH_ENDPOINT_PATH,
     AsyncJobState,
     ResponseFormat,
+    companies_request,
+    ensure_streamable,
+    lines_from_text,
     parse_response,
 )
 
@@ -55,6 +61,18 @@ class AsyncResult:
                         output_file.write(chunk)
         logger.info("Downloaded file: %s", output_path)
         return True
+
+
+def _iter_nonempty_lines(response: requests.Response) -> Iterator[str]:
+    """Decode the body's lines as UTF-8, skipping blanks.
+
+    Decoding explicitly rather than via `decode_unicode=True`: requests guesses
+    ISO-8859-1 for a `text/*` response that omits its charset, which would
+    mangle any non-ASCII row.
+    """
+    for line in response.iter_lines():
+        if line:
+            yield line.decode("utf-8")
 
 
 def _raise_for_status_with_body(response: requests.Response) -> requests.Response:
@@ -114,6 +132,34 @@ class VainuAPIBaseClient:
             timeout=self._timeout,
             **kwargs,
         )
+
+    @contextmanager
+    def stream(self, method: http.HTTPMethod, path: str, **kwargs) -> Iterator[Iterator[str]]:
+        """Yield the response body one line at a time, as it arrives.
+
+        Same auth-retry contract as `request`, but the body is never buffered in
+        full — so a slow export can be written out while the server is still
+        producing it. The response is released when the context manager exits,
+        even if the caller stops iterating early.
+        """
+        logger.debug("Vainu API %s %s (streaming)", method, path)
+        url = path if path.startswith(("http://", "https://")) else f"{self._base_url}{path}"
+        response = self._send(method, url, stream=True, **kwargs)
+        if response.status_code == http.HTTPStatus.UNAUTHORIZED and self._invalidate_credentials():
+            logger.debug("Access token rejected — retrying once with a fresh token")
+            response.close()
+            response = self._send(method, url, stream=True, **kwargs)
+        try:
+            if response.status_code >= http.HTTPStatus.BAD_REQUEST:
+                # Draining the body first so .text works, and because an error
+                # payload is not rows either way.
+                response.content  # noqa: B018
+                _raise_for_status_with_body(response)
+                yield lines_from_text(response.text)
+            else:
+                yield _iter_nonempty_lines(response)
+        finally:
+            response.close()
 
     def _invalidate_credentials(self) -> bool:
         """Discard credentials the server just rejected with a 401.
@@ -208,25 +254,23 @@ class VainuAPIBaseClient:
         payload: dict | str,
         format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
     ) -> dict | str:
-        path = "/v2/companies/"
-        if isinstance(payload, dict):
-            return parse_response(
-                self.request(
-                    method=http.HTTPMethod.POST,
-                    path=f"{path}?format={format}",
-                    json=payload,
-                ),
-                format,
-            )
-        if isinstance(payload, str):
-            return parse_response(
-                self.request(
-                    method=http.HTTPMethod.GET,
-                    path=f"{path}{payload}&format={format}",
-                ),
-                format,
-            )
-        raise ValueError("payload must be str or dict")
+        method, path, json_body = companies_request(payload, format)
+        return parse_response(
+            self.request(method=method, path=path, json=json_body),
+            format,
+        )
+
+    @contextmanager
+    def stream_companies(
+        self,
+        payload: dict | str,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> Iterator[Iterator[str]]:
+        """Stream company data line by line (`csv` / `jsonl` only)."""
+        ensure_streamable(format)
+        method, path, json_body = companies_request(payload, format)
+        with self.stream(method=method, path=path, json=json_body) as lines:
+            yield lines
 
     def organizations(
         self,
@@ -242,6 +286,21 @@ class VainuAPIBaseClient:
             format,
         )
 
+    @contextmanager
+    def stream_organizations(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> Iterator[Iterator[str]]:
+        """Stream organization data line by line (`csv` / `jsonl` only)."""
+        ensure_streamable(format)
+        with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/organizations/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
+
     def organizations_async(
         self,
         payload: dict,
@@ -253,6 +312,64 @@ class VainuAPIBaseClient:
             payload=payload,
             format=format,
         )
+
+    def signals_news(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        return parse_response(
+            self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/signals/news/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    @contextmanager
+    def stream_signals_news(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> Iterator[Iterator[str]]:
+        """Stream news signals line by line (`jsonl` only — the API renders no csv)."""
+        ensure_streamable(format)
+        with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/signals/news/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
+
+    def signals_data_changes(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        return parse_response(
+            self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/signals/data-changes/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    @contextmanager
+    def stream_signals_data_changes(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> Iterator[Iterator[str]]:
+        """Stream data-change signals line by line (`jsonl` only)."""
+        ensure_streamable(format)
+        with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/signals/data-changes/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
 
     def close(self) -> None:
         self._http.close()

@@ -13,11 +13,17 @@ from conftest import (
     ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
+    CSV_RESPONSE,
     JSONL_RESPONSE,
+    JSONL_STREAM_LINES,
+    JSONL_STREAM_RESPONSE,
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    SIGNALS_DATA_CHANGES_RESPONSE,
+    SIGNALS_JSONL_RESPONSE,
+    SIGNALS_NEWS_RESPONSE,
 )
 
 from vainu_cli._async_client import (
@@ -90,6 +96,37 @@ class TestVainuAPIKeyClientCompanies:
         client = VainuAPIKeyClient(api_key="test-key")
         with pytest.raises(ValueError, match="payload must be str or dict"):
             await client.companies(payload=42)  # type: ignore[arg-type]
+        await client.close()
+
+    @respx.mock
+    async def test_companies_400_returns_api_error_body_as_json(self):
+        # 4xx responses are intentionally returned to the caller (see
+        # _raise_for_status_with_body) so the CLI can surface the API's error
+        # message without a Python traceback — same contract as the sync client.
+        respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(400, json={"detail": "Invalid query parameter: foo"})
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.companies(payload="?country=FI")
+        await client.close()
+        assert result == {"detail": "Invalid query parameter: foo"}
+
+    @respx.mock
+    async def test_companies_400_returns_api_error_body_as_text(self):
+        respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(400, text="Bad request payload")
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.companies(payload="?country=FI", format="csv")
+        await client.close()
+        assert result == "Bad request payload"
+
+    @respx.mock
+    async def test_companies_500_still_raises(self):
+        respx.get(f"{BASE_URL}/v2/companies/").mock(return_value=httpx.Response(500, text="boom"))
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.companies(payload="?country=FI")
         await client.close()
 
 
@@ -183,6 +220,166 @@ class TestVainuAPIKeyClientOrganizations:
         result = await client.companies(payload="?country=FI", format="jsonl")
         await client.close()
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeyClientSignals:
+    @respx.mock
+    async def test_signals_news_post_returns_list(self):
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=json").mock(
+            return_value=httpx.Response(200, json=SIGNALS_NEWS_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_news(
+            payload={"query": {"?ALL": [{"?IN": {"tags": [43543]}}]}}
+        )
+        await client.close()
+        assert isinstance(result, list)
+        assert result[0]["tags"] == [{"id": 43543, "value": "Funding"}]
+
+    @respx.mock
+    async def test_signals_news_post_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=SIGNALS_JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_news(payload={"query": {}}, format="jsonl")
+        await client.close()
+        assert result == SIGNALS_JSONL_RESPONSE
+
+    @respx.mock
+    async def test_signals_data_changes_post_returns_list(self):
+        respx.post(f"{BASE_URL}/v3/signals/data-changes/?format=json").mock(
+            return_value=httpx.Response(200, json=SIGNALS_DATA_CHANGES_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_data_changes(payload={"query": {}})
+        await client.close()
+        assert isinstance(result, list)
+        assert result[0]["dynamic_values"][0]["key"] == "new_financial_statement"
+
+    @respx.mock
+    async def test_signals_data_changes_post_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/signals/data-changes/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=SIGNALS_JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_data_changes(payload={"query": {}}, format="jsonl")
+        await client.close()
+        assert result == SIGNALS_JSONL_RESPONSE
+
+
+class TestVainuAPIKeyClientStreaming:
+    @staticmethod
+    async def _collect(lines) -> list[str]:
+        return [line async for line in lines]
+
+    @respx.mock
+    async def test_stream_signals_news_yields_lines(self):
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=JSONL_STREAM_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_signals_news(payload={"query": {}}) as lines:
+            assert await self._collect(lines) == JSONL_STREAM_LINES
+        await client.close()
+
+    @respx.mock
+    async def test_stream_signals_data_changes_yields_lines(self):
+        respx.post(f"{BASE_URL}/v3/signals/data-changes/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=JSONL_STREAM_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_signals_data_changes(payload={"query": {}}) as lines:
+            assert await self._collect(lines) == JSONL_STREAM_LINES
+        await client.close()
+
+    @respx.mock
+    async def test_stream_organizations_yields_lines(self):
+        respx.post(f"{BASE_URL}/v3/organizations/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_organizations(payload={"query": {}}) as lines:
+            assert await self._collect(lines) == JSONL_RESPONSE.splitlines()
+        await client.close()
+
+    @respx.mock
+    async def test_stream_companies_post_yields_csv_lines(self):
+        respx.post(f"{BASE_URL}/v2/companies/?format=csv").mock(
+            return_value=httpx.Response(200, text=CSV_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_companies(payload={"filter": {}}, format="csv") as lines:
+            rows = await self._collect(lines)
+        await client.close()
+        assert rows[0] == "business_id,name"
+        assert rows == CSV_RESPONSE.splitlines()
+
+    @respx.mock
+    async def test_stream_companies_accepts_query_string_payload(self):
+        route = respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, text=JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_companies(payload="?country=FI") as lines:
+            assert await self._collect(lines) == JSONL_RESPONSE.splitlines()
+        await client.close()
+        assert "format=jsonl" in str(route.calls[0].request.url)
+
+    async def test_stream_rejects_json_format(self):
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(ValueError, match="cannot be streamed"):
+            async with client.stream_signals_news(payload={"query": {}}, format="json"):
+                pass
+        await client.close()
+
+    @respx.mock
+    async def test_stream_yields_swallowed_error_body(self):
+        """400/403/404 bodies are returned rather than raised, as in the buffered path."""
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=jsonl").mock(
+            return_value=httpx.Response(400, json={"detail": "invalid order by value"})
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_signals_news(payload={"query": {}}) as lines:
+            assert await self._collect(lines) == ['{"detail":"invalid order by value"}']
+        await client.close()
+
+    @respx.mock
+    async def test_stream_raises_on_server_error(self):
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=jsonl").mock(
+            return_value=httpx.Response(500, json={"detail": "boom"})
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(httpx.HTTPStatusError):
+            async with client.stream_signals_news(payload={"query": {}}):
+                pass
+        await client.close()
+
+    @respx.mock
+    async def test_stream_retries_once_on_a_revoked_cached_token(self):
+        respx.post(f"{BASE_URL}/oauth/token/").mock(
+            return_value=httpx.Response(200, json=OAUTH_TOKEN_RESPONSE)
+        )
+        respx.post(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, json=COMPANIES_RESPONSE)
+        )
+        route = respx.post(f"{BASE_URL}/v3/organizations/?format=jsonl").mock(
+            side_effect=[
+                httpx.Response(401, json={"detail": "invalid"}),
+                httpx.Response(200, text=JSONL_RESPONSE),
+            ]
+        )
+
+        primer = VainuOAuthAPIClient(client_id="id", client_secret="secret", token_cache=True)
+        await primer.companies(payload={"filter": {}})
+        await primer.close()
+
+        client = VainuOAuthAPIClient(client_id="id", client_secret="secret", token_cache=True)
+        async with client.stream_organizations(payload={"query": {}}) as lines:
+            assert await self._collect(lines) == JSONL_RESPONSE.splitlines()
+        await client.close()
+
+        assert len(route.calls) == 2
 
 
 # ── VainuOAuthAPIClient ──────────────────────────────────────────────────────
