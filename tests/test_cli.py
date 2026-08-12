@@ -12,6 +12,9 @@ from conftest import (
     JSONL_RESPONSE,
     JWT_REFRESH_URL,
     ORGANIZATIONS_RESPONSE,
+    SIGNALS_DATA_CHANGES_RESPONSE,
+    SIGNALS_JSONL_RESPONSE,
+    SIGNALS_NEWS_RESPONSE,
 )
 
 from vainu_cli.cli import main
@@ -492,6 +495,140 @@ class TestOrganizationsExport:
 
         assert result.exit_code == 0
         assert "Result exists in result_url:" in result.output
+
+
+# ── signals ───────────────────────────────────────────────────────────────────
+
+
+class TestSignalsNews:
+    @resp.activate
+    def test_signals_news_with_payload_stdin(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/", json=SIGNALS_NEWS_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-"],
+            input='{"query": {"?ALL": [{"?IN": {"tags": [43543]}}]}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["id"] == "65f0a1b2c3d4e5f6a7b8c9d0"
+
+    def test_signals_news_requires_payload(self, runner):
+        result = runner.invoke(main, ["--api-key", "test-key", "signals-news"])
+        assert result.exit_code != 0
+
+    @resp.activate
+    def test_signals_news_payload_path_alias(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=json",
+            json=SIGNALS_NEWS_RESPONSE,
+        )
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"query": {}}')
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload-path", str(payload_file)],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+    @resp.activate
+    def test_signals_news_writes_raw_jsonl_to_file(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/news/?format=jsonl",
+            body=SIGNALS_JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "signals.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "signals-news",
+                "--payload",
+                "-",
+                "--format",
+                "jsonl",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == SIGNALS_JSONL_RESPONSE
+
+    def test_signals_news_rejects_csv_format(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-news", "--payload", "-", "--format", "csv"],
+            input='{"query": {}}',
+        )
+        assert result.exit_code != 0
+        assert "csv" in result.output
+
+    @resp.activate
+    def test_task_duration_is_logged_at_debug(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/", json=SIGNALS_NEWS_RESPONSE)
+        with patch("vainu_cli.cli.logger.debug") as mock_debug:
+            result = runner.invoke(
+                main,
+                ["-v", "--api-key", "test-key", "signals-news", "--payload", "-"],
+                input='{"query": {}}',
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        mock_debug.assert_any_call("Task '%s' %s in %.3fs", "signals-news", "completed", ANY)
+
+
+class TestSignalsDataChanges:
+    @resp.activate
+    def test_signals_data_changes_with_payload_stdin(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/",
+            json=SIGNALS_DATA_CHANGES_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "signals-data-changes", "--payload", "-"],
+            input='{"query": {"?ALL": [{"?IN": {"tags": [8000037]}}]}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["dynamic_values"][0]["key"] == "new_financial_statement"
+
+    def test_signals_data_changes_requires_payload(self, runner):
+        result = runner.invoke(main, ["--api-key", "test-key", "signals-data-changes"])
+        assert result.exit_code != 0
+
+    def test_signals_data_changes_async_mode_uses_async_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.signals_data_changes = AsyncMock(return_value=SIGNALS_DATA_CHANGES_RESPONSE)
+            instance.close = AsyncMock()
+
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "--async-mode",
+                    "signals-data-changes",
+                    "--payload",
+                    "-",
+                ],
+                input='{"query": {}}',
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        instance.signals_data_changes.assert_awaited_once_with(payload={"query": {}}, format="json")
 
 
 # ── --version ─────────────────────────────────────────────────────────────────

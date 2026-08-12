@@ -41,7 +41,12 @@ from vainu_cli.auth.commands import (
     logout_command,
 )
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
-from vainu_cli.common import PUBLIC_CLIENT_ID, RESPONSE_FORMATS, ResponseFormat
+from vainu_cli.common import (
+    PUBLIC_CLIENT_ID,
+    RESPONSE_FORMATS,
+    SIGNALS_RESPONSE_FORMATS,
+    ResponseFormat,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +251,15 @@ def _load_payload(query: str | None, payload_path: str | None) -> str | dict:
         raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
 
 
+def _load_payload_file(payload_path: str) -> dict:
+    """Read a required JSON payload from a file path, or '-' for stdin."""
+    raw = sys.stdin.read() if payload_path == "-" else open(payload_path).read()  # noqa: SIM115
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
+
+
 def _write_output(data: dict | list | str, output: str | None) -> None:
     text = data if isinstance(data, str) else json.dumps(data, indent=2, ensure_ascii=False)
     if output:
@@ -287,6 +301,17 @@ def _option_format(func: F) -> F:
     )(func)
 
 
+def _option_signals_format(func: F) -> F:
+    return click.option(
+        "--format",
+        "fmt",
+        type=click.Choice(SIGNALS_RESPONSE_FORMATS),
+        default="json",
+        show_default=True,
+        help="Response format.",
+    )(func)
+
+
 def _option_language(func: F) -> F:
     return click.option(
         "--language",
@@ -309,6 +334,12 @@ def _option_output(required: bool) -> Callable[[F], F]:
 
 def _option_filter_base(func: F) -> F:
     decorated = _option_format(func)
+    decorated = _option_language(decorated)
+    return decorated
+
+
+def _option_signals_base(func: F) -> F:
+    decorated = _option_signals_format(func)
     decorated = _option_language(decorated)
     return decorated
 
@@ -523,11 +554,7 @@ def organizations_search(
     output: str | None,
 ) -> None:
     """Fetch organization data (POST with JSON payload)."""
-    raw = sys.stdin.read() if payload_path == "-" else open(payload_path).read()  # noqa: SIM115
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
+    payload = _load_payload_file(payload_path)
 
     if config.async_mode:
 
@@ -566,11 +593,7 @@ def organizations_export(
     timeout: int,
 ) -> None:
     """Export organizations via async job — polls until complete and downloads to file."""
-    raw = sys.stdin.read() if payload_path == "-" else open(payload_path).read()  # noqa: SIM115
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
+    payload = _load_payload_file(payload_path)
 
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
@@ -587,6 +610,79 @@ def organizations_export(
         click.echo(f"Result exists in result_url: {result_url}", err=True)
     else:
         click.echo(f"Export saved to {output}", err=True)
+
+
+# ── signals ──────────────────────────────────────────────────────────────────
+
+
+@main.command("signals-news")
+@_option_payload(required=True)
+@_option_signals_base
+@_option_output(required=False)
+@click.pass_obj
+@_timed_task("signals-news")
+def signals_news_search(
+    config: Config,
+    payload_path: str,
+    fmt: ResponseFormat,
+    language: str | None,
+    output: str | None,
+) -> None:
+    """Fetch news signals (POST with JSON payload)."""
+    payload = _load_payload_file(payload_path)
+
+    if config.async_mode:
+
+        async def _run() -> list | str:
+            client = _make_async_client(config, language=language)
+            try:
+                return await client.signals_news(payload=payload, format=fmt)
+            finally:
+                await client.close()
+
+        result = asyncio.run(_run())
+    else:
+        client = _make_sync_client(config, language=language)
+        try:
+            result = client.signals_news(payload=payload, format=fmt)
+        finally:
+            client.close()
+    _write_output(result, output)
+
+
+@main.command("signals-data-changes")
+@_option_payload(required=True)
+@_option_signals_base
+@_option_output(required=False)
+@click.pass_obj
+@_timed_task("signals-data-changes")
+def signals_data_changes_search(
+    config: Config,
+    payload_path: str,
+    fmt: ResponseFormat,
+    language: str | None,
+    output: str | None,
+) -> None:
+    """Fetch data-change signals (POST with JSON payload)."""
+    payload = _load_payload_file(payload_path)
+
+    if config.async_mode:
+
+        async def _run() -> list | str:
+            client = _make_async_client(config, language=language)
+            try:
+                return await client.signals_data_changes(payload=payload, format=fmt)
+            finally:
+                await client.close()
+
+        result = asyncio.run(_run())
+    else:
+        client = _make_sync_client(config, language=language)
+        try:
+            result = client.signals_data_changes(payload=payload, format=fmt)
+        finally:
+            client.close()
+    _write_output(result, output)
 
 
 # ── auth (login / logout / status) ───────────────────────────────────────────

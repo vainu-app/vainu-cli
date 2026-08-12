@@ -18,6 +18,9 @@ from conftest import (
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    SIGNALS_DATA_CHANGES_RESPONSE,
+    SIGNALS_JSONL_RESPONSE,
+    SIGNALS_NEWS_RESPONSE,
 )
 
 from vainu_cli._async_client import (
@@ -183,6 +186,52 @@ class TestVainuAPIKeyClientOrganizations:
         result = await client.companies(payload="?country=FI", format="jsonl")
         await client.close()
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeyClientSignals:
+    @respx.mock
+    async def test_signals_news_post_returns_list(self):
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=json").mock(
+            return_value=httpx.Response(200, json=SIGNALS_NEWS_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_news(
+            payload={"query": {"?ALL": [{"?IN": {"tags": [43543]}}]}}
+        )
+        await client.close()
+        assert isinstance(result, list)
+        assert result[0]["tags"] == [{"id": 43543, "value": "Funding"}]
+
+    @respx.mock
+    async def test_signals_news_post_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/signals/news/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=SIGNALS_JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_news(payload={"query": {}}, format="jsonl")
+        await client.close()
+        assert result == SIGNALS_JSONL_RESPONSE
+
+    @respx.mock
+    async def test_signals_data_changes_post_returns_list(self):
+        respx.post(f"{BASE_URL}/v3/signals/data-changes/?format=json").mock(
+            return_value=httpx.Response(200, json=SIGNALS_DATA_CHANGES_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_data_changes(payload={"query": {}})
+        await client.close()
+        assert isinstance(result, list)
+        assert result[0]["dynamic_values"][0]["key"] == "new_financial_statement"
+
+    @respx.mock
+    async def test_signals_data_changes_post_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/signals/data-changes/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=SIGNALS_JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.signals_data_changes(payload={"query": {}}, format="jsonl")
+        await client.close()
+        assert result == SIGNALS_JSONL_RESPONSE
 
 
 # ── VainuOAuthAPIClient ──────────────────────────────────────────────────────

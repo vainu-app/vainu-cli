@@ -8,6 +8,8 @@ JWT_REFRESH_ENDPOINT_PATH = "/token_authentication/refresh/"
 ResponseFormat: TypeAlias = Literal["json", "csv", "jsonl"]
 DEFAULT_RESPONSE_FORMAT: ResponseFormat = "json"
 RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "csv", "jsonl")
+# The Signals API renders json and jsonl only, so csv is not offered there.
+SIGNALS_RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "jsonl")
 # Per-request HTTP timeout (connect + read) for every client. Slow synchronous
 # searches stream their body for well over a minute, so keep this above the
 # API's own 120s ceiling rather than racing it.
@@ -41,7 +43,7 @@ class ResponseLike(Protocol):
     def json(self) -> dict: ...
 
 
-def parse_response(response: ResponseLike, format: ResponseFormat) -> dict | str:
+def parse_response(response: ResponseLike, format: ResponseFormat) -> dict | list | str:
     if format == "json":
         return response.json()
     return response.text

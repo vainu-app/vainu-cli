@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "recipe": "Data-change signals, first page of a JSON Lines export",
+    "source_url": "https://developers.vainu.com/v3/docs/signals-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/signals/data-changes/",
+    "note": "Run with --format jsonl --output. limit is capped at 100 and offset at 100000; raise offset by limit until a page returns fewer rows than limit."
+  },
+  "query": {
+    "?ALL": [
+      { "?IN": { "tags": [8000037] } },
+      { "?RANGE": { "vainu_date": ["2026-01-01", "2026-01-31"] } }
+    ]
+  },
+  "limit": 100,
+  "offset": 0
+}

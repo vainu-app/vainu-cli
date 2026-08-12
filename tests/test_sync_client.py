@@ -17,6 +17,9 @@ from conftest import (
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    SIGNALS_DATA_CHANGES_RESPONSE,
+    SIGNALS_JSONL_RESPONSE,
+    SIGNALS_NEWS_RESPONSE,
 )
 
 from vainu_cli._sync_client import (
@@ -201,6 +204,48 @@ class TestVainuAPIKeySyncClientOrganizations:
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.companies(payload="?country=FI", format="jsonl")
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeySyncClientSignals:
+    @resp.activate
+    def test_signals_news_post_returns_list(self):
+        resp.add(resp.POST, f"{BASE_URL}/v3/signals/news/?format=json", json=SIGNALS_NEWS_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_news(payload={"query": {"?ALL": [{"?IN": {"tags": [43543]}}]}})
+        assert isinstance(result, list)
+        assert result[0]["tags"] == [{"id": 43543, "value": "Funding"}]
+
+    @resp.activate
+    def test_signals_news_post_uses_explicit_format(self):
+        resp.add(
+            resp.POST, f"{BASE_URL}/v3/signals/news/?format=jsonl", body=SIGNALS_JSONL_RESPONSE
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_news(payload={"query": {}}, format="jsonl")
+        assert result == SIGNALS_JSONL_RESPONSE
+
+    @resp.activate
+    def test_signals_data_changes_post_returns_list(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/?format=json",
+            json=SIGNALS_DATA_CHANGES_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_data_changes(payload={"query": {}})
+        assert isinstance(result, list)
+        assert result[0]["dynamic_values"][0]["key"] == "new_financial_statement"
+
+    @resp.activate
+    def test_signals_data_changes_post_uses_explicit_format(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/signals/data-changes/?format=jsonl",
+            body=SIGNALS_JSONL_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.signals_data_changes(payload={"query": {}}, format="jsonl")
+        assert result == SIGNALS_JSONL_RESPONSE
 
 
 # ── VainuOAuthSyncClient ─────────────────────────────────────────────────────
