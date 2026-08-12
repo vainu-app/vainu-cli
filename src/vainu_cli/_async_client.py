@@ -312,7 +312,7 @@ class VainuOAuthAPIClient(VainuAPIBaseClient):
         self,
         client_id: str,
         client_secret: str,
-        scope: str = "api",
+        scope: str = "vainu:api",
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
         token_cache: bool | None = None,
