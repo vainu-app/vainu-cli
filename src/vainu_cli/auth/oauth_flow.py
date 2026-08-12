@@ -189,19 +189,16 @@ def run_login(
     redirect_uri = f"http://127.0.0.1:{chosen_port}{redirect_path}"
 
     authorize_host = (authorize_base_url or base_url).rstrip("/")
-    authorize_url = (
-        f"{authorize_host}{OAUTH_AUTHORIZE_ENDPOINT}?"
-        + urlencode(
-            {
-                "response_type": "code",
-                "client_id": client_id,
-                "redirect_uri": redirect_uri,
-                "scope": scope,
-                "state": state,
-                "code_challenge": challenge,
-                "code_challenge_method": "S256",
-            }
-        )
+    authorize_url = f"{authorize_host}{OAUTH_AUTHORIZE_ENDPOINT}?" + urlencode(
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "state": state,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
     )
 
     opened = False
@@ -210,8 +207,7 @@ def run_login(
             opened = webbrowser.open(authorize_url, new=1, autoraise=True)
     if not opened:
         echo(
-            "Open this URL in your browser to continue logging in:\n"
-            f"  {authorize_url}",
+            f"Open this URL in your browser to continue logging in:\n  {authorize_url}",
             err=True,
         )
     else:
@@ -257,9 +253,7 @@ def run_login(
             + (f" — {result.error_description}" if result.error_description else "")
         )
     if not result.code or result.state != state:
-        raise click.ClickException(
-            "OAuth state mismatch — possible CSRF; aborting."
-        )
+        raise click.ClickException("OAuth state mismatch — possible CSRF; aborting.")
 
     token_data = _exchange_code(
         base_url=base_url,

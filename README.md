@@ -127,7 +127,20 @@ export VAINU_CLIENT_SECRET=your-client-secret
 vainu --auth-method oauth companies --payload payload.json
 ```
 
-Tokens are fetched and cached automatically; expired tokens are refreshed transparently.
+Tokens are fetched and refreshed transparently, and the access token is cached between
+invocations so repeated commands skip the token round-trip. The cache lives in the OS
+keyring (Keychain / Secret Service / Credential Locker), falling back to a 0600 file under
+the user config dir when no keyring backend is available. Entries are keyed by base URL,
+client ID and scope, so several environments can be used side by side.
+
+```bash
+VAINU_TOKEN_CACHE=0 vainu --auth-method oauth companies ...  # mint a fresh token
+VAINU_AUTH_STORE=file vainu --auth-method oauth companies ...  # skip the keyring
+vainu auth logout                                            # drop cached tokens
+```
+
+A token that the API rejects with 401 is discarded and the request retried once, so a
+revoked token costs one extra call rather than an hour of failures.
 
 ---
 
