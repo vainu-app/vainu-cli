@@ -95,6 +95,37 @@ class TestVainuAPIKeyClientCompanies:
             await client.companies(payload=42)  # type: ignore[arg-type]
         await client.close()
 
+    @respx.mock
+    async def test_companies_400_returns_api_error_body_as_json(self):
+        # 4xx responses are intentionally returned to the caller (see
+        # _raise_for_status_with_body) so the CLI can surface the API's error
+        # message without a Python traceback — same contract as the sync client.
+        respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(400, json={"detail": "Invalid query parameter: foo"})
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.companies(payload="?country=FI")
+        await client.close()
+        assert result == {"detail": "Invalid query parameter: foo"}
+
+    @respx.mock
+    async def test_companies_400_returns_api_error_body_as_text(self):
+        respx.get(f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(400, text="Bad request payload")
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.companies(payload="?country=FI", format="csv")
+        await client.close()
+        assert result == "Bad request payload"
+
+    @respx.mock
+    async def test_companies_500_still_raises(self):
+        respx.get(f"{BASE_URL}/v2/companies/").mock(return_value=httpx.Response(500, text="boom"))
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.companies(payload="?country=FI")
+        await client.close()
+
 
 class TestVainuAPIKeyClientCompaniesAsync:
     @respx.mock

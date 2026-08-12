@@ -70,6 +70,25 @@ class AsyncResult:
             ) from exc
 
 
+def _raise_for_status_with_body(response: httpx.Response) -> httpx.Response:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as err:
+        logger.error(
+            "HTTP error %s: %s — body: %s",
+            response.status_code,
+            err,
+            response.text,
+        )
+        if response.status_code not in (
+            http.HTTPStatus.BAD_REQUEST,
+            http.HTTPStatus.FORBIDDEN,
+            http.HTTPStatus.NOT_FOUND,
+        ):
+            raise
+    return response
+
+
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
     ASYNC_POLL_MAX_RETRIES = 5
@@ -93,7 +112,7 @@ class VainuAPIBaseClient:
         ):
             logger.debug("Access token rejected — retrying once with a fresh token")
             response = await self._send(method, path, **kwargs)
-        response.raise_for_status()
+        _raise_for_status_with_body(response)
         return response
 
     async def _send(self, method: http.HTTPMethod, path: str, **kwargs) -> httpx.Response:
@@ -327,6 +346,7 @@ class VainuJWTAPIClient(VainuAPIBaseClient):
             refresh_url,
             json={"refresh": self.jwt_token},
         )
+        _raise_for_status_with_body(response)
         response.raise_for_status()
         data = response.json()
         self._access_token = data["access"]
