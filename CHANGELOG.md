@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Example Organizations API request bodies under `example_payloads/organizations_api/`, with a
+  README section cataloguing them and showing how to run each one through the CLI
+
 ## [0.1.0] - 2026-04-13
 
 ### Added

@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "recipe": "Get Companies Where Basic Data Has Changed",
+    "source_url": "https://developers.vainu.com/v3/recipes/track-modifications",
+    "endpoint_sync": "POST https://api.vainu.io/api/v3/organizations/",
+    "endpoint_async": "POST https://api.vainu.io/api/v3/organizations/async/",
+    "note": "modifications_range = [time_of_previous_run, now - 10 seconds], both ISO 8601 timestamps computed at runtime. Placeholders below show the example values from the recipe."
+  },
+  "query": {
+    "?ALL": [
+      {
+        "?ANY": [
+          {
+            "?RANGE": {
+              "modifications.basic": [
+                "2026-03-20T06:48:00.323028",
+                "<NOW_MINUS_10_SECONDS_ISO8601>"
+              ]
+            }
+          },
+          {
+            "?RANGE": {
+              "modifications.financial_statements": [
+                "2026-03-20T06:48:00.323028",
+                "<NOW_MINUS_10_SECONDS_ISO8601>"
+              ]
+            }
+          }
+        ]
+      },
+      { "?IN": { "business_ids": ["FI05381340"] } }
+    ]
+  },
+  "fields": ["business_id", "name", "founded", "contacts"],
+  "database": "FI",
+  "limit": 100
+}
