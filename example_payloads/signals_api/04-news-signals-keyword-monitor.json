@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "recipe": "News signals keyword monitor",
+    "source_url": "https://developers.vainu.com/v3/docs/signals-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/signals/news/",
+    "note": "Keyword search is news-only. Matching is case-insensitive and starts at a word boundary, so infix substrings never match. countries is the signal's source country, not the company's. ?RANGE is inclusive at both ends."
+  },
+  "query": {
+    "?ALL": [
+      { "?IN": { "countries": ["FI"] } },
+      { "?ICONTAINS": { "content": ["rahoituskierros", "tuotantolaitos"] } },
+      { "?RANGE": { "vainu_date": ["2026-01-01", "2026-06-30"] } }
+    ]
+  },
+  "limit": 100
+}

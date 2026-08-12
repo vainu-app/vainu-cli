@@ -242,6 +242,34 @@ class VainuAPIBaseClient:
             format=format,
         )
 
+    async def signals_news(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/signals/news/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    async def signals_data_changes(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/signals/data-changes/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
     async def close(self) -> None:
         await self._http.aclose()
 

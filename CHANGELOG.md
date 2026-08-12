@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vainu signals-news` — fetch news signals from the v3 Signals API (beta)
+- `vainu signals-data-changes` — fetch data-change signals from the v3 Signals API (beta)
+- `signals_news` / `signals_data_changes` on the async and sync clients, returning the API's
+  bare JSON array under `format="json"`
+- Example Signals API request bodies under `example_payloads/signals_api/`, covering tag
+  filtering, keyword monitoring and JSON Lines paging
 - Example Organizations API request bodies under `example_payloads/organizations_api/`, with a
   README section cataloguing them and showing how to run each one through the CLI
 

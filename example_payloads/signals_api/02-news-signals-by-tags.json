@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "recipe": "News signals by signal type (tags)",
+    "source_url": "https://developers.vainu.com/v3/docs/signals-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/signals/news/",
+    "note": "43543 = Funding, 77883 = Mergers & Acquisitions. Values inside one ?IN are OR-ed; two sibling ?IN clauses would be AND-ed."
+  },
+  "query": {
+    "?ALL": [
+      { "?IN": { "tags": [43543, 77883] } },
+      { "?GTE": { "vainu_date": "30 days ago" } }
+    ]
+  },
+  "limit": 50
+}

@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "recipe": "Data-change signals for a set of companies",
+    "source_url": "https://developers.vainu.com/v3/docs/signals-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/signals/data-changes/",
+    "note": "8000037 = New Financial Statement, 8000038 = Change of CEO. Data changes have no countries field and cannot be filtered by title or content, so scope by business_ids plus tags and a date bound."
+  },
+  "query": {
+    "?ALL": [
+      { "?IN": { "business_ids": ["FI25578642", "FI01320292"] } },
+      { "?IN": { "tags": [8000037, 8000038] } },
+      { "?GTE": { "vainu_date": "2 years ago" } }
+    ]
+  },
+  "limit": 50
+}
