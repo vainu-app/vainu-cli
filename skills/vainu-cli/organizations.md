@@ -23,6 +23,21 @@ All organization commands take a JSON POST body via `--payload FILE` or `--paylo
 | `offset` | Pagination offset |
 | `aggregation` | Subdocument aggregations (contacts, vehicles, etc.) |
 
+## Discovering field paths
+
+List filterable and returnable fields before writing payloads:
+
+```bash
+vainu fields organizations
+vainu fields organizations --filterable --search revenue
+vainu fields organizations --returnable --category contacts
+vainu fields organizations --permission-gated --view summary
+```
+
+Use `--view json` for the raw API catalog (includes types, allowed operators, and
+`requires_permission` gates). Contact email/phone and similar fields are listed in
+the catalog but require account entitlements to read or filter in practice.
+
 ## Common VQL operators
 
 | Operator | Meaning | Example |
@@ -88,7 +103,7 @@ vainu organizations \
 
 - `limit` is capped at **100** per request — page with `offset` or use `organizations-async`
 - The CLI does **not** expose `/v3/organizations/count/` or `/v3/organizations/search/` (fuzzy search)
-- Unknown field names in `query` are **silently ignored** — verify field paths in README or Vainu docs
+- Unknown field names in `query` are **silently ignored** — verify paths with `vainu fields organizations`
 - For contact subdocument filters, use `?MATCH` on `contacts` or see bundled aggregation examples
 
 ## Bundled examples index

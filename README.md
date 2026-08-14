@@ -172,6 +172,7 @@ Commands:
   companies-async       Export company data via async job
   organizations         Fetch organization data
   organizations-async   Export organization data via async job
+  fields                Inspect organization field metadata
   enrichment-agent      Run an enrichment agent prompt against one company
   signals-news          Fetch news signals
   signals-data-changes  Fetch company data-change signals
@@ -211,6 +212,47 @@ they already download to a file in chunks.
 
 `organizations` and `organizations-async` also accept `--payload-path` as an alias for
 `--payload`.
+
+To see which field paths you can put in `query` vs the `fields` output list, use
+[`vainu fields organizations`](#vainu-fields).
+
+### `vainu fields`
+
+Lists organization field metadata from
+`GET /v3/organizations_fields/` — names, types, and whether each path is **filterable**
+(usable in a VQL `query`) or **output** (usable in the `fields` list). The response is a
+catalog, not company records.
+
+```
+vainu fields organizations
+
+--view               table | summary | json  (default: table)
+--output FILE        Write the view to a file instead of stdout
+--api-version TEXT   API version query param (default: v3)
+--category TEXT      Only this main_category (e.g. basic, contacts)
+--database TEXT      Only fields available for FI | SE | NO | DK | NL
+--search TEXT        Case-insensitive match on path, English name, or description
+--filterable         Only fields usable in VQL filters (filter/search)
+--returnable         Only fields usable in the fields output list (export/profile)
+--permission-gated   Only fields that require an extra account entitlement
+```
+
+```bash
+vainu fields organizations
+vainu fields organizations --filterable --search revenue
+vainu fields organizations --returnable --category contacts
+vainu fields organizations --permission-gated --view summary
+vainu fields organizations --view json --output fields.json
+```
+
+The default **table** view is grep-friendly: `path`, `name`, `filterable`, `output`,
+`permission`, `type`. **summary** prints counts by category and lists permission gates.
+**json** returns the (optionally filtered) API payload, including allowed operators.
+
+Filterable means `application_availability` includes `filter` or `search`. Output means
+`export` or `profile`. Some paths — contact email/phone, payment delays, vehicles, real
+estate — are listed with a `requires_permission` slug and stay inaccessible until the
+account is entitled to them.
 
 ### Streaming
 
@@ -564,6 +606,7 @@ vainu enrichment-agent \
 | `companies_async(payload, format)` | Submit async job → `AsyncResult` |
 | `organizations(payload, format)` | Fetch organization data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
 | `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
+| `organization_fields(api_versions?)` | Organization field catalog (`list`) |
 | `enrichment_agent(payload, format)` | Run an enrichment agent prompt on one company (`dict` for `json`) |
 | `signals_news(payload, format)` | Fetch news signals (`list` for `json`, raw `str` for `jsonl`) |
 | `signals_data_changes(payload, format)` | Fetch data-change signals (`list` for `json`, raw `str` for `jsonl`) |

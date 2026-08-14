@@ -410,6 +410,19 @@ class VainuAPIBaseClient:
             format,
         )
 
+    async def organization_fields(
+        self,
+        api_versions: str = "v3",
+    ) -> list:
+        """Return organization field metadata (filterable vs output availability)."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/organizations_fields/?api_versions={api_versions}",
+            ),
+            DEFAULT_RESPONSE_FORMAT,
+        )
+
     async def organization_lists(
         self,
         format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,

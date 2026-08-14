@@ -62,6 +62,7 @@ Optional: `VAINU_BASE_URL` to override the API host.
 | `vainu companies-async` | v2 async export | `--payload` + required `--output` |
 | `vainu organizations` | v3 POST | `--payload` JSON with `database` + `query` |
 | `vainu organizations-async` | v3 async export | `--payload` + required `--output` |
+| `vainu fields organizations` | v3 GET metadata | filterable vs output field catalog |
 | `vainu signals-news` | v3 signals | `--payload` JSON, OAuth/JWT/login |
 | `vainu signals-data-changes` | v3 signals | `--payload` JSON, OAuth/JWT/login |
 | `vainu lists` | v3 list index | OAuth/JWT/login — list all organization lists |
