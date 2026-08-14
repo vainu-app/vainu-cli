@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and which require an extra account permission
 - `organization_fields(api_versions)` on the async and sync clients
 
-- [SETUP.md](SETUP.md) — step-by-step install guide for non-technical users (Mac, Windows, Linux)
+- README "Get started" section — step-by-step install guide for non-technical users (Mac, Windows, Linux)
+- `scripts/install.sh` / `scripts/install.ps1` fall back to
+  `git+https://github.com/vainu-app/vainu-cli.git` when the PyPI install fails
+  (the package is not published to PyPI yet)
 - `scripts/install.ps1` — Windows PowerShell installer via uv
 - `vainu doctor` — verify install, auth, and bundled examples
 - [AGENTS.md](AGENTS.md) — setup guide for Cursor/Claude Code/Codex (uv CLI install + agent skills)
@@ -54,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- README installation leads with the SETUP.md install scripts (`curl … | sh` /
+- README installation leads with the install scripts (`curl … | sh` /
   `irm … | iex`) instead of `pip install`
 
 ### Fixed

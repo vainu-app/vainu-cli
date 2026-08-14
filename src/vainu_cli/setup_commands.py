@@ -21,7 +21,7 @@ def _path_hint() -> str:
     if system == "Windows":
         return (
             f"Add {bin_dir} to your PATH, then close and reopen PowerShell.\n"
-            "See SETUP.md for step-by-step Windows instructions."
+            "See the README 'Get started' section for step-by-step Windows instructions."
         )
     if system == "Darwin":
         return (
@@ -89,7 +89,7 @@ def doctor_command() -> None:
         click.echo("All checks passed. Try:")
         click.echo('  vainu organizations --payload "$(vainu examples path 08-simple-filtering)"')
     else:
-        click.echo("Some checks failed. See SETUP.md or run:")
+        click.echo("Some checks failed. See the README 'Get started' section or run:")
         click.echo("  vainu login")
         ctx = click.get_current_context(silent=True)
         if ctx is not None:
@@ -111,7 +111,8 @@ def _run_update() -> None:
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
         raise click.ClickException(
-            "Update failed. Re-run the installer in SETUP.md, or install uv and retry."
+            "Update failed. Re-run the installer from the README 'Get started' "
+            "section, or install uv and retry."
         )
     click.echo("Update complete. Run `vainu --version` to confirm.")
 

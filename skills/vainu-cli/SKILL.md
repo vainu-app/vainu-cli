@@ -21,7 +21,8 @@ CLI and Python client for the [Vainu](https://vainu.com) API.
 
 Never lead with `pip install`. Use `uv` — it bootstraps Python automatically.
 
-**Non-technical users:** point them to [SETUP.md](../../SETUP.md) (Mac, Windows, Linux).
+**Non-technical users:** point them to [README.md → Get started](../../README.md#get-started)
+(Mac, Windows, Linux).
 
 ```bash
 # Mac / Linux
@@ -33,6 +34,9 @@ curl -LsSf https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/in
 # one-off without install:
 uvx vainu-cli --version
 ```
+
+Not on PyPI yet: the install scripts fall back to GitHub automatically. For a manual
+install use `uv tool install git+https://github.com/vainu-app/vainu-cli.git`.
 
 After install: `vainu login` then `vainu doctor`. Later: `vainu update`.
 
@@ -99,6 +103,6 @@ Large result sets: use `*-async` with `--format jsonl --output file.jsonl`.
 
 - [organizations.md](organizations.md) — VQL payload patterns for `vainu organizations*`
 - [signals.md](signals.md) — payload rules for `vainu signals-*`
-- [README.md](../../README.md) — full CLI reference
-- [SETUP.md](../../SETUP.md) — non-technical setup (Mac, Windows, Linux)
+- [README.md](../../README.md) — full CLI reference, plus non-technical setup under
+  [Get started](../../README.md#get-started) (Mac, Windows, Linux)
 - [AGENTS.md](../../AGENTS.md) — agent setup and cross-agent install notes
