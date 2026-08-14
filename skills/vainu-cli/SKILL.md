@@ -34,7 +34,7 @@ curl -LsSf https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/in
 uvx vainu-cli --version
 ```
 
-After install: `vainu login` then `vainu doctor`.
+After install: `vainu login` then `vainu doctor`. Later: `vainu update`.
 
 ## Authenticate
 

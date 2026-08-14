@@ -1,10 +1,11 @@
-"""`vainu doctor` — friendly install and auth checks."""
+"""`vainu doctor` and `vainu update` — install checks and self-upgrade."""
 
 from __future__ import annotations
 
 import os
 import platform
 import shutil
+import subprocess
 import sys
 
 import click
@@ -93,3 +94,35 @@ def doctor_command() -> None:
         ctx = click.get_current_context(silent=True)
         if ctx is not None:
             ctx.exit(1)
+
+
+PACKAGE_NAME = "vainu-cli"
+
+
+def _upgrade_argv() -> list[str]:
+    if shutil.which("uv"):
+        return ["uv", "tool", "upgrade", PACKAGE_NAME]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE_NAME]
+
+
+def _run_update() -> None:
+    click.echo(f"Updating vainu-cli {__version__}...")
+    cmd = _upgrade_argv()
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        raise click.ClickException(
+            "Update failed. Re-run the installer in SETUP.md, or install uv and retry."
+        )
+    click.echo("Update complete. Run `vainu --version` to confirm.")
+
+
+@click.command("update")
+def update_command() -> None:
+    """Upgrade vainu-cli to the latest version from PyPI."""
+    _run_update()
+
+
+@click.command("upgrade")
+def upgrade_command() -> None:
+    """Upgrade vainu-cli to the latest version from PyPI. Alias for `update`."""
+    _run_update()

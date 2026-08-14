@@ -16,30 +16,47 @@ Query Nordic company data, export large datasets, and integrate Vainu into your 
 **Non-technical users:** see **[SETUP.md](SETUP.md)** — copy one command, sign in, run your first search.
 
 **Using with AI agents?** See [AGENTS.md](AGENTS.md) and the
-[`vainu-cli` skill](skills/vainu-cli/SKILL.md). Install with `./scripts/install.sh`
-(Mac/Linux) or `./scripts/install.ps1` (Windows), or `uv tool install vainu-cli`.
+[`vainu-cli` skill](skills/vainu-cli/SKILL.md).
+
+### CLI
+
+Mac / Linux:
 
 ```bash
-pip install vainu-cli
+curl -LsSf https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/install.sh | sh
 ```
 
-Or with [uv](https://docs.astral.sh/uv/):
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/install.ps1 | iex
+```
+
+From a git checkout: `./scripts/install.sh --local` (Mac/Linux) or `.\scripts\install.ps1 -Local` (Windows).
+
+Then `vainu login` and `vainu doctor`. To get later releases: `vainu update` (or `vainu upgrade`).
+
+The installer uses [uv](https://docs.astral.sh/uv/) and bootstraps Python 3.11+ if needed.
+
+### Python library
 
 ```bash
 uv add vainu-cli
 ```
 
-Or directly from GitHub:
-
 ```bash
-pip install git+https://github.com/vainu-app/vainu-cli.git
+pip install vainu-cli
 ```
+
+From GitHub:
 
 ```bash
 uv add git+https://github.com/vainu-app/vainu-cli.git
 ```
 
-Requires Python 3.11+.
+```bash
+pip install git+https://github.com/vainu-app/vainu-cli.git
+```
 
 ---
 
@@ -177,6 +194,8 @@ Commands:
   signals-news          Fetch news signals
   signals-data-changes  Fetch company data-change signals
   lists                 Manage organization lists (static and dynamic)
+  update                Upgrade vainu-cli to the latest PyPI release
+  upgrade               Alias for update
 ```
 
 ### `vainu companies`
@@ -215,6 +234,17 @@ they already download to a file in chunks.
 
 To see which field paths you can put in `query` vs the `fields` output list, use
 [`vainu fields organizations`](#vainu-fields).
+
+### `vainu update` / `vainu upgrade`
+
+Upgrade the CLI to the latest PyPI release. Prefers `uv tool upgrade vainu-cli` (the
+SETUP.md installer); falls back to `pip install --upgrade vainu-cli` if `uv` is not on
+PATH.
+
+```
+vainu update
+vainu upgrade
+```
 
 ### `vainu fields`
 
