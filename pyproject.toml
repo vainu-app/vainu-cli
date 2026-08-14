@@ -53,8 +53,8 @@ vainu = "vainu_cli.cli:main"
 
 [project.urls]
 Homepage = "https://vainu.com"
-Repository = "https://gitlab.com/vainu/vainu-cli"
-Changelog = "https://gitlab.com/vainu/vainu-cli/-/blob/main/CHANGELOG.md"
+Repository = "https://github.com/vainu-app/vainu-cli"
+Changelog = "https://github.com/vainu-app/vainu-cli/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "src/vainu_cli/_version.py"

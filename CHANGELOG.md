@@ -62,4 +62,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--format` option: `json`, `csv`, `jsonl`
 - `--output` option to write results to a file instead of stdout
 - PEP 561 `py.typed` marker for downstream type checkers
-- GitLab CI/CD pipeline: ruff, bandit, pip-audit, pytest (Python 3.11–3.13), build, PyPI publish

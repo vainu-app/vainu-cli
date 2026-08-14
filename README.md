@@ -694,7 +694,7 @@ asyncio.run(main())
 ## Development
 
 ```bash
-git clone https://gitlab.com/vainu/vainu-cli.git
+git clone https://github.com/vainu-app/vainu-cli.git
 cd vainu-cli
 uv sync --extra dev
 
