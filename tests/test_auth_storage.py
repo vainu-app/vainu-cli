@@ -99,6 +99,27 @@ class TestTokenStoreKeyringFallback:
         assert loaded is not None
         assert loaded.account == "bob"
 
+    def test_falls_back_to_file_when_backend_leaks_an_oserror(self, monkeypatch):
+        # The Windows backend raises pywintypes.error (an OSError subclass, not a
+        # KeyringError) when CredWrite refuses the payload — e.g. an access token
+        # over the 2560-byte credential blob limit. That must not abort `login`.
+        def _raise_oserror(*_a, **_kw):
+            raise OSError(1783, "CredWrite", "The stub received bad data.")
+
+        monkeypatch.setattr("vainu_cli.auth.storage.keyring.set_password", _raise_oserror)
+        monkeypatch.setattr("vainu_cli.auth.storage.keyring.get_password", _raise_oserror)
+        monkeypatch.setattr("vainu_cli.auth.storage.keyring.delete_password", _raise_oserror)
+
+        store = TokenStore(force_file=False)
+        store.save(_creds(account="dave"))
+        assert store.backend == "file"
+        loaded = store.load()
+        assert loaded is not None
+        assert loaded.account == "dave"
+        assert store.backend == "file"
+        store.clear()
+        assert store.load() is None
+
     def test_keyring_path_is_preferred_when_available(self, monkeypatch):
         secret_bag: dict[tuple[str, str], str] = {}
 

@@ -46,6 +46,14 @@ ENV_FORCE_FILE_STORE = "VAINU_AUTH_STORE"
 # the tokens themselves live in the keyring, which has no enumeration API.
 CACHE_INDEX_FILENAME = "cache-index.json"
 CLIENT_CREDENTIALS_PREFIX = "cc-"
+# Keyring backends do not reliably wrap their platform errors in a KeyringError.
+# The Windows Credential Locker backend calls win32cred.CredWrite without a
+# try/except, so a refused write (e.g. a payload over the 2560-byte
+# CRED_MAX_CREDENTIAL_BLOB_SIZE, which a large access token can exceed) surfaces
+# as a raw pywintypes.error — an OSError subclass, not a KeyringError. The keyring
+# is best-effort here: any failure to reach it must land on the file backend
+# instead of aborting the command.
+_KEYRING_FAILURES = (keyring.errors.KeyringError, OSError)
 ENV_TOKEN_CACHE = "VAINU_TOKEN_CACHE"  # noqa: S105  # nosec B105 — env var name, not a credential
 _CACHE_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
 
@@ -116,7 +124,7 @@ class TokenStore:
                 # remove it so `load` returns the keyring value.
                 self._remove_file_silently()
                 return
-            except keyring.errors.KeyringError as exc:
+            except _KEYRING_FAILURES as exc:
                 logger.warning("Keyring unavailable, falling back to file: %s", exc)
         self._write_file(payload)
         self._last_backend = "file"
@@ -125,7 +133,7 @@ class TokenStore:
         if not self._force_file:
             try:
                 raw = keyring.get_password(KEYRING_SERVICE, self._username)
-            except keyring.errors.KeyringError as exc:
+            except _KEYRING_FAILURES as exc:
                 logger.debug("Keyring read failed: %s", exc)
             else:
                 if raw:
@@ -153,7 +161,7 @@ class TokenStore:
                 keyring.delete_password(KEYRING_SERVICE, self._username)
             except keyring.errors.PasswordDeleteError:
                 pass
-            except keyring.errors.KeyringError as exc:
+            except _KEYRING_FAILURES as exc:
                 logger.debug("Keyring delete failed: %s", exc)
         self._remove_file_silently()
         if self._username != KEYRING_USERNAME:
