@@ -7,56 +7,144 @@
 CLI and Python client library for the [Vainu](https://vainu.com) company data API.
 Query Nordic company data, export large datasets, and integrate Vainu into your workflows.
 
-**New here?** Follow [SETUP.md](SETUP.md) for a step-by-step install guide (Mac, Windows, Linux) — no coding required.
+**New here?** Start with [Get started](#get-started) — copy one command, sign in, run
+your first search. No coding experience required.
 
 ---
 
-## Installation
+## Get started
 
-**Non-technical users:** see **[SETUP.md](SETUP.md)** — copy one command, sign in, run your first search.
+You will copy one command, sign in with your browser, and run your first company
+search.
 
-**Using with AI agents?** See [AGENTS.md](AGENTS.md) and the
-[`vainu-cli` skill](skills/vainu-cli/SKILL.md).
+**Time:** about 5 minutes.
 
-### CLI
+### Step 1 — Install
 
-Mac / Linux:
+Pick the section for your computer. The installer uses
+[uv](https://docs.astral.sh/uv/) to handle Python for you — you do not need to
+install Python yourself.
+
+#### Mac
+
+1. Open **Terminal** (press `Cmd + Space`, type `Terminal`, press Enter).
+2. Copy and paste this entire line, then press Enter:
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/install.sh | sh
 ```
 
-Windows (PowerShell):
+3. Wait until you see `Next steps:` — installation is done.
+4. **Close Terminal and open it again** (so the `vainu` command is recognized).
+
+#### Windows
+
+1. Open **PowerShell** (Start menu → type `PowerShell` → open **Windows PowerShell**).
+2. Copy and paste this entire line, then press Enter:
 
 ```powershell
 irm https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/install.ps1 | iex
 ```
 
-From a git checkout: `./scripts/install.sh --local` (Mac/Linux) or `.\scripts\install.ps1 -Local` (Windows).
+3. Wait until you see `Next steps:` — installation is done.
+4. **Close PowerShell and open it again.**
 
-Then `vainu login` and `vainu doctor`. To get later releases: `vainu update` (or `vainu upgrade`).
+> If Windows blocks the script, run PowerShell as your normal user (not Administrator)
+> and try again.
 
-The installer uses [uv](https://docs.astral.sh/uv/) and bootstraps Python 3.11+ if needed.
+#### Linux
 
-### Python library
-
-```bash
-uv add vainu-cli
-```
+Same as Mac — open a terminal and run:
 
 ```bash
-pip install vainu-cli
+curl -LsSf https://raw.githubusercontent.com/vainu-app/vainu-cli/main/scripts/install.sh | sh
 ```
 
-From GitHub:
+Then close and reopen the terminal.
+
+### Step 2 — Sign in
+
+In Terminal (Mac/Linux) or PowerShell (Windows), run:
+
+```bash
+vainu login
+```
+
+Your browser opens. Sign in with your Vainu account. When done, return to the
+terminal — you should see `Logged in as ...`.
+
+### Step 3 — Verify
+
+```bash
+vainu doctor
+```
+
+You should see `All checks passed.` If something failed, the command prints what to
+fix.
+
+### Step 4 — Your first search
+
+Look up a Finnish company by business ID:
+
+**Mac / Linux:**
+
+```bash
+vainu organizations --payload "$(vainu examples path 08-simple-filtering)"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+vainu organizations --payload (vainu examples path 08-simple-filtering)
+```
+
+You get JSON with company details. That's it.
+
+### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `'vainu' is not recognized` | Close and reopen Terminal / PowerShell. Still broken? Run install again. |
+| Mac: command not found after install | Add to `~/.zprofile`: `export PATH="$HOME/.local/bin:$PATH"`, then open a new window. |
+| Linux: command not found after install | Add to `~/.bashrc`: `export PATH="$HOME/.local/bin:$PATH"`, then open a new window. |
+| Windows: command not found | Close PowerShell completely and reopen. Check `%USERPROFILE%\.local\bin` exists. |
+| Login browser does not open | Run `vainu login --no-browser` and open the printed URL manually. |
+| Signals commands fail | Signals need OAuth — use `vainu login`, not an API key alone. |
+| Want the latest CLI | Run `vainu update` (or `vainu upgrade`). |
+
+Run `vainu doctor` anytime to diagnose install and auth issues.
+
+---
+
+## Other install options
+
+Requires Python 3.11+ — uv installs it for you if it is missing. The install scripts
+above pull from PyPI and fall back to GitHub while the package is not published yet,
+so the commands here are only needed for manual installs.
+
+From a git checkout:
+
+```bash
+./scripts/install.sh --local      # Mac / Linux
+.\scripts\install.ps1 -Local      # Windows (PowerShell)
+```
+
+Straight from GitHub with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install git+https://github.com/vainu-app/vainu-cli.git
+```
+
+As a library dependency in a Python project:
 
 ```bash
 uv add git+https://github.com/vainu-app/vainu-cli.git
 ```
 
-```bash
-pip install git+https://github.com/vainu-app/vainu-cli.git
-```
+To move to a later release once installed: `vainu update` (or `vainu upgrade`).
+
+**Using with AI agents?** See [AGENTS.md](AGENTS.md) and the
+[`vainu-cli` skill](skills/vainu-cli/SKILL.md).
 
 ---
 
@@ -237,9 +325,9 @@ To see which field paths you can put in `query` vs the `fields` output list, use
 
 ### `vainu update` / `vainu upgrade`
 
-Upgrade the CLI to the latest PyPI release. Prefers `uv tool upgrade vainu-cli` (the
-SETUP.md installer); falls back to `pip install --upgrade vainu-cli` if `uv` is not on
-PATH.
+Upgrade the CLI to the latest PyPI release. Prefers `uv tool upgrade vainu-cli` (what
+the install scripts use); falls back to `pip install --upgrade vainu-cli` if `uv` is
+not on PATH.
 
 ```
 vainu update

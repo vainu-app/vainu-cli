@@ -3,7 +3,8 @@
 This guide is for Cursor, Claude Code, ChatGPT Codex, and other agent-assisted
 workflows. **Use vainu-cli via `uv`** — no manual Python or pip setup required.
 
-**Non-technical users** should start with [SETUP.md](SETUP.md) instead (Mac, Windows, Linux).
+**Non-technical users** should start with [README.md → Get started](README.md#get-started)
+instead (Mac, Windows, Linux).
 
 For detailed **CLI workflows** (VQL payloads, signals, auth, exports), load the
 `vainu-cli` agent skill — see [Agent skills](#agent-skills) below.
@@ -37,12 +38,16 @@ Or from a git checkout:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 uv tool install vainu-cli
+# not published to PyPI yet — if that fails, install from GitHub:
+uv tool install git+https://github.com/vainu-app/vainu-cli.git
 ```
 
 Run without installing:
 
 ```bash
 uvx vainu-cli --version
+# or, straight from GitHub:
+uvx --from git+https://github.com/vainu-app/vainu-cli.git vainu --version
 ```
 
 ### Authenticate
@@ -96,7 +101,7 @@ carries detailed CLI instructions (VQL, signals, exports).
 
 If you are an AI agent helping a user set up Vainu:
 
-1. Run the install script ([SETUP.md](SETUP.md): Mac/Linux `install.sh`, Windows `install.ps1`) or `uv tool install vainu-cli`, then `vainu login` and `vainu doctor`.
+1. Run the install script ([README.md → Get started](README.md#get-started): Mac/Linux `install.sh`, Windows `install.ps1`) or `uv tool install vainu-cli`, then `vainu login` and `vainu doctor`.
 2. Load the `vainu-cli` skill for command routing and payload patterns.
 3. Use bundled examples: `vainu examples list` and `vainu examples path <name>` — do not
    hand-write JSON unless necessary.

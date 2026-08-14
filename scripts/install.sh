@@ -4,6 +4,7 @@
 set -eu
 
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
+GIT_URL="git+https://github.com/vainu-app/vainu-cli.git"
 INSTALL_LOCAL=false
 
 for arg in "$@"; do
@@ -44,7 +45,11 @@ if [ "$INSTALL_LOCAL" = true ]; then
   uv tool install --editable "${REPO_ROOT}"
 else
   echo "Installing vainu-cli from PyPI..."
-  uv tool install vainu-cli
+  if ! uv tool install vainu-cli; then
+    echo ""
+    echo "PyPI install failed — falling back to GitHub (${GIT_URL})..."
+    uv tool install "$GIT_URL"
+  fi
 fi
 
 echo ""
@@ -65,5 +70,5 @@ if ! command -v vainu >/dev/null 2>&1; then
       echo "Still missing? Add to ~/.bashrc:  export PATH=\"\$HOME/.local/bin:\$PATH\""
       ;;
   esac
-  echo "See SETUP.md for step-by-step instructions."
+  echo "See the README 'Get started' section for step-by-step instructions."
 fi

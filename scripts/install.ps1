@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$GitUrl = "git+https://github.com/vainu-app/vainu-cli.git"
+
 function Show-Usage {
     Write-Host "Usage: .\install.ps1 [-Local]"
     Write-Host ""
@@ -35,7 +37,18 @@ if ($Local) {
     uv tool install --editable $RepoRoot
 } else {
     Write-Host "Installing vainu-cli from PyPI..."
-    uv tool install vainu-cli
+    $installed = $false
+    try {
+        uv tool install vainu-cli
+        $installed = ($LASTEXITCODE -eq 0)
+    } catch {
+        $installed = $false
+    }
+    if (-not $installed) {
+        Write-Host ""
+        Write-Host "PyPI install failed - falling back to GitHub ($GitUrl)..."
+        uv tool install $GitUrl
+    }
 }
 
 Write-Host ""
