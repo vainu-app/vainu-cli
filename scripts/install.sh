@@ -47,9 +47,22 @@ else
 fi
 
 echo ""
-echo "Installed: $(vainu --version 2>/dev/null || echo 'vainu-cli')"
+echo "Installed: $(vainu --version 2>/dev/null || echo 'vainu-cli (open a new terminal if vainu is not found)')"
 echo ""
 echo "Next steps:"
 echo "  vainu login          # sign in via browser"
+echo "  vainu doctor         # verify everything works"
 echo "  vainu examples list  # bundled example payloads"
-echo "  vainu organizations --payload \"\$(vainu examples path 08-simple-filtering)\""
+if ! command -v vainu >/dev/null 2>&1; then
+  echo ""
+  echo "If 'vainu' is not found, close this terminal and open a new one."
+  case "$(uname -s)" in
+    Darwin)
+      echo "Still missing? Add to ~/.zprofile:  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      ;;
+    Linux)
+      echo "Still missing? Add to ~/.bashrc:  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      ;;
+  esac
+  echo "See SETUP.md for step-by-step instructions."
+fi

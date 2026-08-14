@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [SETUP.md](SETUP.md) — step-by-step install guide for non-technical users (Mac, Windows, Linux)
+- `scripts/install.ps1` — Windows PowerShell installer via uv
+- `vainu doctor` — verify install, auth, and bundled examples
 - [AGENTS.md](AGENTS.md) — setup guide for Cursor/Claude Code/Codex (uv CLI install + agent skills)
 - Cross-agent CLI skill under [skills/vainu-cli/](skills/vainu-cli/) (symlinked to `.cursor/skills/`, `.claude/skills/`, `.agents/skills/`)
 - `scripts/install-skills.sh` — copy skill to personal agent directories
