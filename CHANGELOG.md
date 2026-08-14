@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [SETUP.md](SETUP.md) — step-by-step install guide for non-technical users (Mac, Windows, Linux)
+- `scripts/install.ps1` — Windows PowerShell installer via uv
+- `vainu doctor` — verify install, auth, and bundled examples
+- [AGENTS.md](AGENTS.md) — setup guide for Cursor/Claude Code/Codex (uv CLI install + agent skills)
+- Cross-agent CLI skill under [skills/vainu-cli/](skills/vainu-cli/) (symlinked to `.cursor/skills/`, `.claude/skills/`, `.agents/skills/`)
+- `scripts/install-skills.sh` — copy skill to personal agent directories
+- `scripts/install.sh` — one-line install via uv (`curl … | sh` or `./scripts/install.sh --local`)
+- Example payloads bundled in the wheel under `vainu_cli/example_payloads/`
+- `vainu examples list` and `vainu examples path` to discover bundled payloads after install
 - `vainu enrichment-agent` — run an enrichment agent prompt (built in the Vainu UI) against one
   company and get the prompt's structured fields back. Takes `--prompt`, `--database` and
   `--business-id` directly, or the same keys via `--payload` with flags overriding the file, plus
@@ -19,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `enrichment-agent`: an uncached agent run researches the company on the spot and can outlast
   the 121s default
 - Example Enrichment Agent API request body under `example_payloads/enrichment_agent_api/`
-
 - Line-by-line streaming on `companies`, `organizations`, `signals-news` and
   `signals-data-changes`, **on by default** for `--format jsonl` and `csv`: each line is written
   as it arrives instead of the whole body being buffered first. `--no-stream` restores the
