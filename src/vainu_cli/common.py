@@ -12,6 +12,8 @@ DEFAULT_RESPONSE_FORMAT: ResponseFormat = "json"
 RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "csv", "jsonl")
 # The Signals API renders json and jsonl only, so csv is not offered there.
 SIGNALS_RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "jsonl")
+# The Enrichment Agent API renders json and jsonl only.
+ENRICHMENT_RESPONSE_FORMATS: tuple[ResponseFormat, ...] = ("json", "jsonl")
 # Line-oriented formats, the only ones a response body can be split on newlines.
 STREAMABLE_FORMATS: tuple[ResponseFormat, ...] = ("csv", "jsonl")
 DEFAULT_STREAM_FORMAT: ResponseFormat = "jsonl"

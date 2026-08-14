@@ -1,5 +1,6 @@
 """Unit tests for the synchronous Vainu client."""
 
+import json
 import time
 
 import pytest
@@ -13,6 +14,8 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     CSV_RESPONSE,
+    ENRICHMENT_AGENT_JSONL_RESPONSE,
+    ENRICHMENT_AGENT_RESPONSE,
     JSONL_RESPONSE,
     JSONL_STREAM_LINES,
     JSONL_STREAM_RESPONSE,
@@ -207,6 +210,45 @@ class TestVainuAPIKeySyncClientOrganizations:
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.companies(payload="?country=FI", format="jsonl")
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeySyncClientEnrichmentAgent:
+    @resp.activate
+    def test_enrichment_agent_post_returns_structured_response(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/enrichment_agent/?format=json",
+            json=ENRICHMENT_AGENT_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.enrichment_agent(
+            payload={
+                "prompt": "12345",
+                "database": "FI",
+                "business_id": "FI01320292",
+                "refresh": False,
+            }
+        )
+        assert "main_business_activity" in result["response"]
+        assert json.loads(resp.calls[0].request.body)["business_id"] == "FI01320292"
+
+    @resp.activate
+    def test_enrichment_agent_post_uses_explicit_format(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/enrichment_agent/?format=jsonl",
+            body=ENRICHMENT_AGENT_JSONL_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.enrichment_agent(
+            payload={"prompt": "12345", "database": "FI", "business_id": "FI01320292"},
+            format="jsonl",
+        )
+        assert result == ENRICHMENT_AGENT_JSONL_RESPONSE
+
+    def test_timeout_override_reaches_the_session(self):
+        client = VainuAPIKeySyncClient(api_key="test-key", timeout=600)
+        assert client._timeout == 600
 
 
 class TestVainuAPIKeySyncClientSignals:
