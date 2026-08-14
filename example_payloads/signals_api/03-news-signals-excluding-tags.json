@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "recipe": "News signals excluding noisy signal types",
+    "source_url": "https://developers.vainu.com/v3/docs/signals-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/signals/news/",
+    "note": "43535 = Open Positions. An exclusion also returns signals that carry no tags at all, so ?EXISTS keeps those out."
+  },
+  "query": {
+    "?ALL": [
+      { "?IN": { "countries": ["FI"] } },
+      { "?NOT": { "?IN": { "tags": [43535] } } },
+      { "?EXISTS": { "tags": true } },
+      { "?GTE": { "vainu_date": "7 days ago" } }
+    ]
+  },
+  "limit": 50
+}

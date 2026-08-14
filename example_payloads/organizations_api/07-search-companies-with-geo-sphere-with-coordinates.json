@@ -1,0 +1,23 @@
+{
+  "_meta": {
+    "recipe": "Search Companies With Geo Sphere With Coordinates",
+    "source_url": "https://developers.vainu.com/v3/recipes/search-companies-with-geo-sphere-with-coordinates",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/",
+    "note": "radius is in radians = radius_in_meters / 6371000. Example below uses radius_in_meters = 1000 (1km around Uppsala Castle, Sweden)."
+  },
+  "query": {
+    "?ALL": [
+      {
+        "?GEO_WITHIN_SPHERE": {
+          "business_units.visiting_address.coordinates": {
+            "coordinates": [17.634966, 59.853642],
+            "radius": 0.0001569612305760477
+          }
+        }
+      }
+    ]
+  },
+  "fields": ["business_id", "name", "founded"],
+  "database": "SE",
+  "limit": 10
+}

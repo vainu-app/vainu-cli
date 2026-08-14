@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "recipe": "Amount of Companies matching the query",
+    "source_url": "https://developers.vainu.com/v3/recipes/amount-of-companies-matching-the-query",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/count/"
+  },
+  "query": {
+    "?GTE": { "financial_data.revenue": 1000000 }
+  },
+  "database": "NO",
+  "async": true
+}
