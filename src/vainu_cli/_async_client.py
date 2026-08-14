@@ -439,10 +439,12 @@ class VainuAPIBaseClient:
 
     async def organization_list_delete(self, list_id: str) -> None:
         """Delete an organization list (static or dynamic) by id."""
-        (await self.request(
-            method=http.HTTPMethod.DELETE,
-            path=f"/v3/lists/organizations/{list_id}/",
-        )).raise_for_status()
+        (
+            await self.request(
+                method=http.HTTPMethod.DELETE,
+                path=f"/v3/lists/organizations/{list_id}/",
+            )
+        ).raise_for_status()
 
     async def organization_lists_static(
         self,
@@ -504,26 +506,32 @@ class VainuAPIBaseClient:
 
     async def organization_list_static_delete(self, list_id: str) -> None:
         """Delete a static organization list."""
-        (await self.request(
-            method=http.HTTPMethod.DELETE,
-            path=f"/v3/lists/organizations/static/{list_id}/",
-        )).raise_for_status()
+        (
+            await self.request(
+                method=http.HTTPMethod.DELETE,
+                path=f"/v3/lists/organizations/static/{list_id}/",
+            )
+        ).raise_for_status()
 
     async def organization_list_static_add(self, list_id: str, business_ids: list[str]) -> None:
         """Add business IDs to a static organization list."""
-        (await self.request(
-            method=http.HTTPMethod.PATCH,
-            path=f"/v3/lists/organizations/static/{list_id}/add/",
-            json=business_ids,
-        )).raise_for_status()
+        (
+            await self.request(
+                method=http.HTTPMethod.PATCH,
+                path=f"/v3/lists/organizations/static/{list_id}/add/",
+                json=business_ids,
+            )
+        ).raise_for_status()
 
     async def organization_list_static_remove(self, list_id: str, business_ids: list[str]) -> None:
         """Remove business IDs from a static organization list."""
-        (await self.request(
-            method=http.HTTPMethod.PATCH,
-            path=f"/v3/lists/organizations/static/{list_id}/remove/",
-            json=business_ids,
-        )).raise_for_status()
+        (
+            await self.request(
+                method=http.HTTPMethod.PATCH,
+                path=f"/v3/lists/organizations/static/{list_id}/remove/",
+                json=business_ids,
+            )
+        ).raise_for_status()
 
     async def organization_lists_dynamic(
         self,
@@ -585,10 +593,12 @@ class VainuAPIBaseClient:
 
     async def organization_list_dynamic_delete(self, list_id: str) -> None:
         """Delete a dynamic organization list."""
-        (await self.request(
-            method=http.HTTPMethod.DELETE,
-            path=f"/v3/lists/organizations/dynamic/{list_id}/",
-        )).raise_for_status()
+        (
+            await self.request(
+                method=http.HTTPMethod.DELETE,
+                path=f"/v3/lists/organizations/dynamic/{list_id}/",
+            )
+        ).raise_for_status()
 
     async def close(self) -> None:
         await self._http.aclose()
