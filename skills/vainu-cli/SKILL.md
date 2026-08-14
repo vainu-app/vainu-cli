@@ -64,6 +64,10 @@ Optional: `VAINU_BASE_URL` to override the API host.
 | `vainu organizations-async` | v3 async export | `--payload` + required `--output` |
 | `vainu signals-news` | v3 signals | `--payload` JSON, OAuth/JWT/login |
 | `vainu signals-data-changes` | v3 signals | `--payload` JSON, OAuth/JWT/login |
+| `vainu lists` | v3 list index | OAuth/JWT/login — list all organization lists |
+| `vainu lists delete ID` | v3 list index | delete any list by id |
+| `vainu lists static` | v3 static lists | list, create, update, add, remove, delete |
+| `vainu lists dynamic` | v3 dynamic lists | list, create, update, delete |
 
 Country scoping for organizations: set `"database": "FI"` \| `"SE"` \| `"NO"` \| `"DK"` in the payload (not a separate `country` key).
 

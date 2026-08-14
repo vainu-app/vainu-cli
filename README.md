@@ -175,6 +175,7 @@ Commands:
   enrichment-agent      Run an enrichment agent prompt against one company
   signals-news          Fetch news signals
   signals-data-changes  Fetch company data-change signals
+  lists                 Manage organization lists (static and dynamic)
 ```
 
 ### `vainu companies`
@@ -316,6 +317,92 @@ Payload keys: `query` (required — see the
 - An empty array means "nothing matched" *or* "the query timed out", and an unknown field name
   is ignored rather than rejected — so always include a date bound and check field spelling
   when a result looks too large or too empty.
+
+### `vainu lists`
+
+Manage saved [organization lists](https://developers.vainu.com/v3/docs/list-management-apis.md)
+— both **dynamic** lists (membership from a VQL query, shown as "My Lists" in the Vainu UI) and
+**static** lists (a fixed set of business IDs, shown as "Custom Lists").
+
+Requires OAuth, JWT, or `vainu login` — **not** a static API key alone.
+
+```
+vainu lists                              List all lists (static + dynamic)
+vainu lists get ID                       Retrieve one list by id
+vainu lists delete ID                    Delete any list by id
+
+vainu lists static                       List static lists
+vainu lists static get ID
+vainu lists static create --payload FILE/-   Required: name, country (FI|SE|NO|DK|NL)
+vainu lists static update ID --payload FILE/-
+vainu lists static add ID --payload FILE/-     JSON array of business IDs
+vainu lists static remove ID --payload FILE/-
+vainu lists static delete ID
+
+vainu lists dynamic                      List dynamic lists
+vainu lists dynamic get ID
+vainu lists dynamic create --payload FILE/-  Required: name, country, query (serialized VQL)
+vainu lists dynamic update ID --payload FILE/-
+vainu lists dynamic delete ID
+
+--format             json | jsonl  (default: json)
+--output FILE        Write JSON response to file (create/update/get/list commands)
+```
+
+List all accessible lists and grab an id for export:
+
+```bash
+vainu lists
+vainu lists get 63d8de4eb7dfe9f5896fa539
+```
+
+Create a dynamic list (query is a **JSON string**, not a nested object):
+
+```bash
+cat > dynamic.json <<'EOF'
+{
+  "name": "FI companies with 500+ employees",
+  "country": "FI",
+  "query": "{\"?GTE\": {\"financial_data.employees.absolute_count\": 500}}"
+}
+EOF
+vainu lists dynamic create --payload dynamic.json
+```
+
+Create a static list and add/remove companies (replace placeholder business IDs with your own):
+
+```bash
+vainu lists static create --payload - <<'EOF'
+{"name": "Targets", "country": "FI", "business_ids": ["FI01234567"]}
+EOF
+
+echo '["FI07654321"]' | vainu lists static add LIST_ID --payload -
+echo '["FI01234567"]' | vainu lists static remove LIST_ID --payload -
+```
+
+Rename or replace membership via update:
+
+```bash
+echo '{"name": "Renamed list"}' | vainu lists static update LIST_ID --payload -
+echo '{"business_ids": []}' | vainu lists static update LIST_ID --payload -   # clear all members
+```
+
+Export every company in a saved list (swap in your list id from `vainu lists`):
+
+```bash
+vainu organizations-async \
+  --payload example_payloads/organizations_api/04-get-all-companies-in-vainu-list-async-sync.json \
+  --format jsonl \
+  --output list_companies.jsonl
+```
+
+Notes:
+
+- Static lists support atomic **add** and **remove** (`PATCH .../add/` and `.../remove/`); dynamic
+  lists do not — edit the `query` with `vainu lists dynamic update` instead.
+- `country` is immutable after creation.
+- Each `business_id` must match the list country prefix (`FI…`, `SE…`, etc.).
+- Add/remove payloads must be a JSON **array** of ids, e.g. `["FI01234567"]`, not an object.
 
 ---
 
@@ -480,6 +567,15 @@ vainu enrichment-agent \
 | `enrichment_agent(payload, format)` | Run an enrichment agent prompt on one company (`dict` for `json`) |
 | `signals_news(payload, format)` | Fetch news signals (`list` for `json`, raw `str` for `jsonl`) |
 | `signals_data_changes(payload, format)` | Fetch data-change signals (`list` for `json`, raw `str` for `jsonl`) |
+| `organization_lists(format)` | List all organization lists (`list` for `json`) |
+| `organization_list_get(list_id, format)` | Retrieve one list summary |
+| `organization_list_delete(list_id)` | Delete a list (static or dynamic) |
+| `organization_list_static_create(payload, format)` | Create a static list |
+| `organization_list_static_update(list_id, payload, format)` | Update a static list |
+| `organization_list_static_add(list_id, business_ids)` | Add business IDs to a static list |
+| `organization_list_static_remove(list_id, business_ids)` | Remove business IDs from a static list |
+| `organization_list_dynamic_create(payload, format)` | Create a dynamic list |
+| `organization_list_dynamic_update(list_id, payload, format)` | Update a dynamic list |
 | `stream_companies(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
 | `stream_organizations(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
 | `stream_signals_news(payload, format)` | Context manager → line iterator (`jsonl`) |
@@ -523,6 +619,27 @@ result = client.enrichment_agent(
     payload={"prompt": "12345", "database": "FI", "business_id": "FI23365096"}
 )
 print(result["response"])
+client.close()
+```
+
+List management methods (`organization_lists`, `organization_list_static_*`,
+`organization_list_dynamic_*`) require OAuth/JWT/browser auth like signals and enrichment — not
+a static API key.
+
+```python
+import json
+from vainu_cli import VainuOAuthSyncClient
+
+client = VainuOAuthSyncClient(client_id="...", client_secret="...")
+lists = client.organization_lists()
+print(lists[0]["id"], lists[0]["name"])
+
+created = client.organization_list_dynamic_create({
+    "name": "Big FI companies",
+    "country": "FI",
+    "query": json.dumps({"?GTE": {"financial_data.revenue": 1_000_000}}),
+})
+client.organization_list_delete(created["id"])
 client.close()
 ```
 

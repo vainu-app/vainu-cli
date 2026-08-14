@@ -12,16 +12,19 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     CSV_RESPONSE,
+    DYNAMIC_LIST_RESPONSE,
     ENRICHMENT_AGENT_JSONL_RESPONSE,
     ENRICHMENT_AGENT_RESPONSE,
     JSONL_RESPONSE,
     JSONL_STREAM_LINES,
     JSONL_STREAM_RESPONSE,
     JWT_REFRESH_URL,
+    ORGANIZATION_LISTS_RESPONSE,
     ORGANIZATIONS_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
+    STATIC_LIST_RESPONSE,
 )
 
 from vainu_cli.cli import main
@@ -1129,3 +1132,140 @@ class TestOAuthCLI:
         )
         assert result.exit_code != 0
         assert any(kw in result.output for kw in ("client-id", "client_id", "OAuth"))
+
+
+# ── lists ─────────────────────────────────────────────────────────────────────
+
+
+class TestLists:
+    @resp.activate
+    def test_lists_all(self, runner):
+        resp.add(
+            resp.GET,
+            f"{BASE_URL}/v3/lists/organizations/?format=json",
+            json=ORGANIZATION_LISTS_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "lists"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0]["id"] == "63d8de4eb7dfe9f5896fa539"
+
+    @resp.activate
+    def test_lists_static_create(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/lists/organizations/static/?format=json",
+            json=STATIC_LIST_RESPONSE,
+            status=201,
+        )
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"name": "My Static List", "country": "FI"}')
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "lists",
+                "static",
+                "create",
+                "--payload",
+                str(payload_file),
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.output)["name"] == "My Static List"
+
+    @resp.activate
+    def test_lists_static_add(self, runner):
+        resp.add(
+            resp.PATCH,
+            f"{BASE_URL}/v3/lists/organizations/static/63d8de4eb7dfe9f5896fa540/add/",
+            status=204,
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "lists",
+                "static",
+                "add",
+                "63d8de4eb7dfe9f5896fa540",
+                "--payload",
+                "-",
+            ],
+            input='["FI01234567"]',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "Added 1 business ID(s)" in result.output
+
+    @resp.activate
+    def test_lists_dynamic_update(self, runner, tmp_path):
+        resp.add(
+            resp.PATCH,
+            f"{BASE_URL}/v3/lists/organizations/dynamic/69e61e048c5d1ae30b426a1b/?format=json",
+            json=DYNAMIC_LIST_RESPONSE,
+        )
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"name": "Swedish Manufacturers"}')
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "lists",
+                "dynamic",
+                "update",
+                "69e61e048c5d1ae30b426a1b",
+                "--payload",
+                str(payload_file),
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.output)["country"] == "SE"
+
+    def test_lists_static_add_rejects_object_payload(self, runner):
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "lists",
+                "static",
+                "add",
+                "63d8de4eb7dfe9f5896fa540",
+                "--payload",
+                "-",
+            ],
+            input='{"business_ids": ["FI01234567"]}',
+        )
+        assert result.exit_code != 0
+        assert "JSON array" in result.output
+
+    @resp.activate
+    def test_lists_delete(self, runner):
+        resp.add(
+            resp.DELETE,
+            f"{BASE_URL}/v3/lists/organizations/63d8de4eb7dfe9f5896fa539/",
+            status=204,
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "lists",
+                "delete",
+                "63d8de4eb7dfe9f5896fa539",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "Deleted list 63d8de4eb7dfe9f5896fa539" in result.output

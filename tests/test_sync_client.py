@@ -14,6 +14,7 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     CSV_RESPONSE,
+    DYNAMIC_LIST_RESPONSE,
     ENRICHMENT_AGENT_JSONL_RESPONSE,
     ENRICHMENT_AGENT_RESPONSE,
     JSONL_RESPONSE,
@@ -22,10 +23,12 @@ from conftest import (
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
+    ORGANIZATION_LISTS_RESPONSE,
     ORGANIZATIONS_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
+    STATIC_LIST_RESPONSE,
 )
 
 from vainu_cli._sync_client import (
@@ -249,6 +252,58 @@ class TestVainuAPIKeySyncClientEnrichmentAgent:
     def test_timeout_override_reaches_the_session(self):
         client = VainuAPIKeySyncClient(api_key="test-key", timeout=600)
         assert client._timeout == 600
+
+
+class TestVainuAPIKeySyncClientOrganizationLists:
+    @resp.activate
+    def test_organization_lists_get(self):
+        resp.add(
+            resp.GET,
+            f"{BASE_URL}/v3/lists/organizations/?format=json",
+            json=ORGANIZATION_LISTS_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organization_lists()
+        assert isinstance(result, list)
+        assert result[0]["type"] == "dynamic-organization-list"
+
+    @resp.activate
+    def test_organization_list_static_create(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/lists/organizations/static/?format=json",
+            json=STATIC_LIST_RESPONSE,
+            status=201,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organization_list_static_create(
+            {"name": "My Static List", "country": "FI", "business_ids": ["FI01234567"]}
+        )
+        assert result["id"] == STATIC_LIST_RESPONSE["id"]
+
+    @resp.activate
+    def test_organization_list_static_add(self):
+        resp.add(
+            resp.PATCH,
+            f"{BASE_URL}/v3/lists/organizations/static/63d8de4eb7dfe9f5896fa540/add/",
+            status=204,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.organization_list_static_add("63d8de4eb7dfe9f5896fa540", ["FI01234567"])
+
+    @resp.activate
+    def test_organization_list_dynamic_update(self):
+        resp.add(
+            resp.PATCH,
+            f"{BASE_URL}/v3/lists/organizations/dynamic/69e61e048c5d1ae30b426a1b/?format=json",
+            json=DYNAMIC_LIST_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organization_list_dynamic_update(
+            "69e61e048c5d1ae30b426a1b",
+            {"name": "Swedish Manufacturers"},
+        )
+        assert result["country"] == "SE"
 
 
 class TestVainuAPIKeySyncClientSignals:
