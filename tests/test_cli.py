@@ -12,6 +12,8 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     CSV_RESPONSE,
+    ENRICHMENT_AGENT_JSONL_RESPONSE,
+    ENRICHMENT_AGENT_RESPONSE,
     JSONL_RESPONSE,
     JSONL_STREAM_LINES,
     JSONL_STREAM_RESPONSE,
@@ -23,6 +25,7 @@ from conftest import (
 )
 
 from vainu_cli.cli import main
+from vainu_cli.common import DEFAULT_TIMEOUT_SECONDS
 
 
 @pytest.fixture
@@ -59,6 +62,7 @@ class TestCompaniesSearch:
             api_key="test-key",
             base_url=BASE_URL,
             language="fi",
+            timeout=DEFAULT_TIMEOUT_SECONDS,
         )
 
     @resp.activate
@@ -530,6 +534,201 @@ class TestOrganizationsExport:
 
         assert result.exit_code == 0
         assert "Result exists in result_url:" in result.output
+
+
+# ── enrichment agent ──────────────────────────────────────────────────────────
+
+
+class TestEnrichmentAgent:
+    @resp.activate
+    def test_enrichment_agent_with_flags(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/enrichment_agent/?format=json",
+            json=ENRICHMENT_AGENT_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "enrichment-agent",
+                "--prompt",
+                "12345",
+                "--database",
+                "FI",
+                "--business-id",
+                "FI01320292",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "main_business_activity" in json.loads(result.output)["response"]
+        sent = json.loads(resp.calls[0].request.body)
+        assert sent == {"prompt": "12345", "database": "FI", "business_id": "FI01320292"}
+
+    @resp.activate
+    def test_flags_override_payload_file(self, runner, tmp_path):
+        """A saved payload holds the prompt; --business-id varies per run."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/enrichment_agent/?format=json",
+            json=ENRICHMENT_AGENT_RESPONSE,
+        )
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text(
+            '{"prompt": "12345", "database": "FI", "business_id": "FI23365096", "refresh": false}'
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "enrichment-agent",
+                "--payload",
+                str(payload_file),
+                "--business-id",
+                "FI01320292",
+                "--refresh",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        sent = json.loads(resp.calls[0].request.body)
+        assert sent["business_id"] == "FI01320292"
+        assert sent["prompt"] == "12345"
+        assert sent["refresh"] is True
+
+    @resp.activate
+    def test_payload_from_stdin(self, runner):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/enrichment_agent/?format=json",
+            json=ENRICHMENT_AGENT_RESPONSE,
+        )
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "enrichment-agent", "--payload", "-"],
+            input='{"prompt": "12345", "database": "FI", "business_id": "FI01320292"}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+
+    def test_missing_prompt_and_business_id_is_a_usage_error(self, runner):
+        result = runner.invoke(
+            main, ["--api-key", "test-key", "enrichment-agent", "--database", "FI"]
+        )
+        assert result.exit_code != 0
+        assert "--prompt" in result.output
+        assert "--business-id" in result.output
+
+    def test_rejects_non_object_payload(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "enrichment-agent", "--payload", "-"],
+            input="[1, 2, 3]",
+        )
+        assert result.exit_code != 0
+        assert "JSON object" in result.output
+
+    def test_rejects_csv_format(self, runner):
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "enrichment-agent",
+                "--prompt",
+                "12345",
+                "--database",
+                "FI",
+                "--business-id",
+                "FI01320292",
+                "--format",
+                "csv",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "csv" in result.output
+
+    @resp.activate
+    def test_writes_jsonl_to_file(self, runner, tmp_path):
+        """A single enrichment result is one document — jsonl is copied verbatim, not streamed."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/enrichment_agent/?format=jsonl",
+            body=ENRICHMENT_AGENT_JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "enrichment.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "enrichment-agent",
+                "--prompt",
+                "12345",
+                "--database",
+                "FI",
+                "--business-id",
+                "FI01320292",
+                "--format",
+                "jsonl",
+                "--output",
+                str(output_file),
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == ENRICHMENT_AGENT_JSONL_RESPONSE
+
+    def test_request_timeout_is_passed_to_the_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeySyncClient") as MockClient:
+            MockClient.return_value.enrichment_agent.return_value = ENRICHMENT_AGENT_RESPONSE
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "enrichment-agent",
+                    "--prompt",
+                    "12345",
+                    "--database",
+                    "FI",
+                    "--business-id",
+                    "FI01320292",
+                    "--request-timeout",
+                    "600",
+                ],
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+        assert MockClient.call_args.kwargs["timeout"] == 600
+
+    def test_async_mode_uses_the_async_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.enrichment_agent = AsyncMock(return_value=ENRICHMENT_AGENT_RESPONSE)
+            instance.close = AsyncMock()
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "--async-mode",
+                    "enrichment-agent",
+                    "--prompt",
+                    "12345",
+                    "--database",
+                    "FI",
+                    "--business-id",
+                    "FI01320292",
+                ],
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+        assert "main_business_activity" in json.loads(result.output)["response"]
+        instance.enrichment_agent.assert_awaited_once()
 
 
 # ── signals ───────────────────────────────────────────────────────────────────

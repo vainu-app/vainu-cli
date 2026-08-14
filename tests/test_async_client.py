@@ -1,5 +1,6 @@
 """Unit tests for the async Vainu client."""
 
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,6 +15,8 @@ from conftest import (
     BASE_URL,
     COMPANIES_RESPONSE,
     CSV_RESPONSE,
+    ENRICHMENT_AGENT_JSONL_RESPONSE,
+    ENRICHMENT_AGENT_RESPONSE,
     JSONL_RESPONSE,
     JSONL_STREAM_LINES,
     JSONL_STREAM_RESPONSE,
@@ -220,6 +223,44 @@ class TestVainuAPIKeyClientOrganizations:
         result = await client.companies(payload="?country=FI", format="jsonl")
         await client.close()
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeyClientEnrichmentAgent:
+    @respx.mock
+    async def test_enrichment_agent_post_returns_structured_response(self):
+        route = respx.post(f"{BASE_URL}/v3/enrichment_agent/?format=json").mock(
+            return_value=httpx.Response(200, json=ENRICHMENT_AGENT_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.enrichment_agent(
+            payload={
+                "prompt": "12345",
+                "database": "FI",
+                "business_id": "FI01320292",
+                "refresh": False,
+            }
+        )
+        await client.close()
+        assert "main_business_activity" in result["response"]
+        assert json.loads(route.calls[0].request.content)["business_id"] == "FI01320292"
+
+    @respx.mock
+    async def test_enrichment_agent_post_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/enrichment_agent/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=ENRICHMENT_AGENT_JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.enrichment_agent(
+            payload={"prompt": "12345", "database": "FI", "business_id": "FI01320292"},
+            format="jsonl",
+        )
+        await client.close()
+        assert result == ENRICHMENT_AGENT_JSONL_RESPONSE
+
+    async def test_timeout_override_reaches_the_http_client(self):
+        client = VainuAPIKeyClient(api_key="test-key", timeout=600)
+        assert client._http.timeout.read == 600
+        await client.close()
 
 
 class TestVainuAPIKeyClientSignals:

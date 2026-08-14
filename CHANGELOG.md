@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vainu enrichment-agent` — run an enrichment agent prompt (built in the Vainu UI) against one
+  company and get the prompt's structured fields back. Takes `--prompt`, `--database` and
+  `--business-id` directly, or the same keys via `--payload` with flags overriding the file, plus
+  `--refresh` to bypass the server-side cache
+- `enrichment_agent(payload, format)` on the async and sync clients, hitting
+  `POST /v3/enrichment_agent/`
+- `timeout` argument on every client constructor, surfaced as `--request-timeout` on
+  `enrichment-agent`: an uncached agent run researches the company on the spot and can outlast
+  the 121s default
+- Example Enrichment Agent API request body under `example_payloads/enrichment_agent_api/`
+
 - Line-by-line streaming on `companies`, `organizations`, `signals-news` and
   `signals-data-changes`, **on by default** for `--format jsonl` and `csv`: each line is written
   as it arrives instead of the whole body being buffered first. `--no-stream` restores the
