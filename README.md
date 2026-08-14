@@ -172,6 +172,7 @@ Commands:
   companies-async       Export company data via async job
   organizations         Fetch organization data
   organizations-async   Export organization data via async job
+  enrichment-agent      Run an enrichment agent prompt against one company
   signals-news          Fetch news signals
   signals-data-changes  Fetch company data-change signals
 ```
@@ -231,6 +232,52 @@ vainu signals-news --payload payload.json --format jsonl --output signals.jsonl
   `--no-stream` copies the body verbatim, trailing byte included. The rows themselves are the
   same either way.
 
+### `vainu enrichment-agent`
+
+Runs an [enrichment agent](https://developers.vainu.com/v3/recipes/run-enrichment-agent-to-single-business-id-and-get-structured-data)
+prompt against one company and prints the structured fields the prompt defines.
+The prompt itself is built in the Vainu UI — this command only needs its id.
+
+```
+--prompt TEXT            Enrichment agent prompt id from the Vainu UI (required)
+--business-id TEXT       Company business id, e.g. FI23365096 (required)
+--database TEXT          Country database: FI | SE | NO | DK (required)
+--refresh/--no-refresh   Re-run instead of reusing the cached answer
+--payload FILE/-         JSON payload file or "-" for stdin (alternative to the flags above)
+--payload-path FILE/-
+--format                 json | jsonl  (default: json)
+--language TEXT          Accept-Language header
+--request-timeout INT    HTTP timeout in seconds (default: 121)
+--output FILE            Write to file instead of stdout
+```
+
+```bash
+vainu enrichment-agent --prompt 12345 --database FI --business-id FI23365096
+```
+
+```json
+{
+  "response": {
+    "main_business_activity": "Supercell Oy is a mobile game developer that creates …",
+    "products_and_services": "Supercell's primary products are its mobile games …"
+  }
+}
+```
+
+The keys under `response` are whatever the prompt was configured to return, so they differ per
+prompt. Notes worth knowing:
+
+- Like the rest of the v3 API, this needs an OAuth or JWT token — **not** a static API key.
+- Results are **cached per prompt + company**. A cached answer comes back quickly and spends no
+  Vainu agent credits; `--refresh` forces a fresh run and does spend them.
+- An uncached run researches the company on the spot and can take minutes. Raise
+  `--request-timeout` for those; the run continues server-side either way, so a re-run after a
+  timeout usually returns the now-cached answer.
+- `--prompt` / `--database` / `--business-id` may come from `--payload` instead, and any flag you
+  also pass overrides the file. That makes a saved payload reusable: keep the prompt id and
+  database in the file and vary `--business-id` per run.
+- There is no `--stream` — a single enrichment result is one document, not a row stream.
+
 ### `vainu signals-news` / `vainu signals-data-changes`
 
 Fetch signals from the v3 Signals API (beta): `signals-news` returns externally sourced events
@@ -279,6 +326,9 @@ The repository ships ready-made Organizations API request bodies under
 transcribed from the [v3 recipes](https://developers.vainu.com/v3/recipes). Each file is a
 complete POST body — `query`, `fields`, `database`, `limit` and friends at the top level — so it
 can be handed straight to `--payload`. The paths below assume you have cloned the repo.
+
+Each file also carries a `_meta` block naming the recipe it came from. It is sent along with the
+rest of the body and the API ignores it; drop it if you prefer a minimal request.
 
 | File | What it shows | Notes |
 |---|---|---|
@@ -395,6 +445,19 @@ vainu signals-data-changes \
   --output data_changes.jsonl
 ```
 
+### Enrichment Agent API payloads
+
+| File | What it shows | Notes |
+|---|---|---|
+| [`01-run-enrichment-agent-for-one-company.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/enrichment_agent_api/01-run-enrichment-agent-for-one-company.json) | Running one prompt against one company | `prompt` is `CHANGEME` — swap in the prompt id from your Vainu UI |
+
+```bash
+vainu enrichment-agent \
+  --payload example_payloads/enrichment_agent_api/01-run-enrichment-agent-for-one-company.json \
+  --prompt 12345 \
+  --business-id FI01320292
+```
+
 ---
 
 ## Python API
@@ -403,8 +466,8 @@ vainu signals-data-changes \
 
 | Class | Auth |
 |---|---|
-| `VainuAPIKeyClient(api_key, base_url?)` | Static API key |
-| `VainuOAuthAPIClient(client_id, client_secret, scope?, base_url?)` | OAuth 2.0 |
+| `VainuAPIKeyClient(api_key, base_url?, language?, timeout?)` | Static API key |
+| `VainuOAuthAPIClient(client_id, client_secret, scope?, base_url?, language?, timeout?)` | OAuth 2.0 |
 
 **Methods** (all `async`):
 
@@ -414,6 +477,7 @@ vainu signals-data-changes \
 | `companies_async(payload, format)` | Submit async job → `AsyncResult` |
 | `organizations(payload, format)` | Fetch organization data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
 | `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
+| `enrichment_agent(payload, format)` | Run an enrichment agent prompt on one company (`dict` for `json`) |
 | `signals_news(payload, format)` | Fetch news signals (`list` for `json`, raw `str` for `jsonl`) |
 | `signals_data_changes(payload, format)` | Fetch data-change signals (`list` for `json`, raw `str` for `jsonl`) |
 | `stream_companies(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
@@ -426,8 +490,8 @@ vainu signals-data-changes \
 
 | Class | Auth |
 |---|---|
-| `VainuAPIKeySyncClient(api_key, base_url?)` | Static API key |
-| `VainuOAuthSyncClient(client_id, client_secret, scope?, base_url?)` | OAuth 2.0 |
+| `VainuAPIKeySyncClient(api_key, base_url?, language?, timeout?)` | Static API key |
+| `VainuOAuthSyncClient(client_id, client_secret, scope?, base_url?, language?, timeout?)` | OAuth 2.0 |
 
 Same methods as the async clients but blocking (no `await`).
 
@@ -448,6 +512,19 @@ Search methods return parsed JSON only when `format="json"`. For `format="csv"` 
 without JSON re-encoding. The signals methods return a `list` under `format="json"` — the
 Signals API responds with a bare array rather than a page object — and accept `json`/`jsonl`
 only.
+
+`enrichment_agent` returns the prompt's fields under `response` and has no `stream_*` variant,
+since one enrichment result is a single document. An uncached run can take minutes, so pass a
+higher `timeout` (seconds, default 121) to the client when you expect one:
+
+```python
+client = VainuOAuthSyncClient(client_id="...", client_secret="...", timeout=600)
+result = client.enrichment_agent(
+    payload={"prompt": "12345", "database": "FI", "business_id": "FI23365096"}
+)
+print(result["response"])
+client.close()
+```
 
 ### Streaming
 

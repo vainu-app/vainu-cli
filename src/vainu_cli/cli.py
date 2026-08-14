@@ -42,6 +42,8 @@ from vainu_cli.auth.commands import (
 )
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
 from vainu_cli.common import (
+    DEFAULT_TIMEOUT_SECONDS,
+    ENRICHMENT_RESPONSE_FORMATS,
     PUBLIC_CLIENT_ID,
     RESPONSE_FORMATS,
     SIGNALS_RESPONSE_FORMATS,
@@ -96,7 +98,11 @@ class Config:
     store: TokenStore | None = None
 
 
-def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseClient:
+def _make_sync_client(
+    config: Config,
+    language: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> SyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
             raise click.ClickException(
@@ -106,6 +112,7 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
             api_key=config.api_key,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     if config.auth_method == "oauth":
         if not config.client_id or not config.client_secret:
@@ -118,6 +125,7 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
             client_secret=config.client_secret,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     if config.auth_method == "jwt":
         if not config.jwt_token:
@@ -128,6 +136,7 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
             refresh_token=config.jwt_token,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     if config.auth_method == "browser":
         if config.stored is None:
@@ -137,11 +146,16 @@ def _make_sync_client(config: Config, language: str | None = None) -> SyncBaseCl
             store=config.store,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
 
-def _make_async_client(config: Config, language: str | None = None) -> AsyncBaseClient:
+def _make_async_client(
+    config: Config,
+    language: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> AsyncBaseClient:
     if config.auth_method == "apikey":
         if not config.api_key:
             raise click.ClickException(
@@ -151,6 +165,7 @@ def _make_async_client(config: Config, language: str | None = None) -> AsyncBase
             api_key=config.api_key,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     if config.auth_method == "oauth":
         if not config.client_id or not config.client_secret:
@@ -163,6 +178,7 @@ def _make_async_client(config: Config, language: str | None = None) -> AsyncBase
             client_secret=config.client_secret,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     if config.auth_method == "jwt":
         if not config.jwt_token:
@@ -173,6 +189,7 @@ def _make_async_client(config: Config, language: str | None = None) -> AsyncBase
             refresh_token=config.jwt_token,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     if config.auth_method == "browser":
         if config.stored is None:
@@ -182,6 +199,7 @@ def _make_async_client(config: Config, language: str | None = None) -> AsyncBase
             store=config.store,
             base_url=config.base_url,
             language=language,
+            timeout=timeout,
         )
     raise click.ClickException(f"Unknown auth method: {config.auth_method!r}")
 
@@ -346,6 +364,17 @@ def _option_format(func: F) -> F:
         "--format",
         "fmt",
         type=click.Choice(RESPONSE_FORMATS),
+        default="json",
+        show_default=True,
+        help="Response format.",
+    )(func)
+
+
+def _option_enrichment_format(func: F) -> F:
+    return click.option(
+        "--format",
+        "fmt",
+        type=click.Choice(ENRICHMENT_RESPONSE_FORMATS),
         default="json",
         show_default=True,
         help="Response format.",
@@ -722,6 +751,112 @@ def organizations_export(
         click.echo(f"Result exists in result_url: {result_url}", err=True)
     else:
         click.echo(f"Export saved to {output}", err=True)
+
+
+# ── enrichment agent ─────────────────────────────────────────────────────────
+
+ENRICHMENT_AGENT_REQUIRED_KEYS = ("prompt", "database", "business_id")
+
+
+def _enrichment_agent_payload(
+    payload_path: str | None,
+    prompt: str | None,
+    database: str | None,
+    business_id: str | None,
+    refresh: bool | None,
+) -> dict:
+    """Build the request body from a payload file, with explicit flags layered on top.
+
+    That order is what makes a saved payload reusable: keep the prompt id and
+    database in a file and vary only `--business-id` per run.
+    """
+    payload = _load_payload_file(payload_path) if payload_path else {}
+    if not isinstance(payload, dict):
+        raise click.UsageError("--payload must contain a JSON object for enrichment-agent.")
+    overrides = {
+        "prompt": prompt,
+        "database": database,
+        "business_id": business_id,
+        "refresh": refresh,
+    }
+    payload.update({key: value for key, value in overrides.items() if value is not None})
+    missing = [key for key in ENRICHMENT_AGENT_REQUIRED_KEYS if not payload.get(key)]
+    if missing:
+        flags = ", ".join(f"--{key.replace('_', '-')}" for key in missing)
+        raise click.UsageError(
+            f"enrichment-agent needs {flags} — pass the flag(s) or set the same keys in --payload."
+        )
+    return payload
+
+
+@main.command("enrichment-agent")
+@click.option(
+    "--prompt",
+    default=None,
+    help="Enrichment agent prompt id, as created in the Vainu UI.",
+)
+@click.option("--business-id", default=None, help="Company business id, e.g. FI23365096.")
+@click.option("--database", default=None, help="Country database, e.g. FI, SE, NO or DK.")
+@click.option(
+    "--refresh/--no-refresh",
+    default=None,
+    help="Re-run the prompt instead of reusing a cached answer. Re-running spends "
+    "Vainu agent credits and is much slower, so the API reuses the cache by default.",
+)
+@_option_payload(required=False)
+@_option_enrichment_format
+@_option_language
+@click.option(
+    "--request-timeout",
+    default=DEFAULT_TIMEOUT_SECONDS,
+    show_default=True,
+    type=int,
+    help="HTTP timeout in seconds. Raise it for an uncached run — the agent researches "
+    "the company on the spot, which can take minutes.",
+)
+@_option_output(required=False)
+@click.pass_obj
+@_timed_task("enrichment-agent")
+def enrichment_agent_run(
+    config: Config,
+    prompt: str | None,
+    business_id: str | None,
+    database: str | None,
+    refresh: bool | None,
+    payload_path: str | None,
+    fmt: ResponseFormat,
+    language: str | None,
+    request_timeout: int,
+    output: str | None,
+) -> None:
+    """Run an enrichment agent prompt against one company.
+
+    The prompt is built in the Vainu UI; this sends its id together with a
+    company and returns the prompt's own fields under `response`.
+
+    \b
+    Example:
+        vainu enrichment-agent --prompt 12345 --database FI --business-id FI23365096
+    """
+    payload = _enrichment_agent_payload(payload_path, prompt, database, business_id, refresh)
+
+    if config.async_mode:
+
+        async def _run() -> dict | str:
+            client = _make_async_client(config, language=language, timeout=request_timeout)
+            try:
+                return await client.enrichment_agent(payload=payload, format=fmt)
+            finally:
+                await client.close()
+
+        result = asyncio.run(_run())
+    else:
+        client = _make_sync_client(config, language=language, timeout=request_timeout)
+        try:
+            result = client.enrichment_agent(payload=payload, format=fmt)
+        finally:
+            client.close()
+    _write_output(result, output)
 
 
 # ── signals ──────────────────────────────────────────────────────────────────
