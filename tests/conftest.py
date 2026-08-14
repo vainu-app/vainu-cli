@@ -95,6 +95,17 @@ SIGNALS_DATA_CHANGES_RESPONSE = [
     }
 ]
 
+ENRICHMENT_AGENT_RESPONSE = {
+    "response": {
+        "main_business_activity": "Test Company Oy is a mobile game developer that creates …",
+        "products_and_services": "Test Company Oy's primary products are its mobile games …",
+    }
+}
+
+ENRICHMENT_AGENT_JSONL_RESPONSE = (
+    '{"response":{"main_business_activity":"Test Company Oy is a mobile game developer …"}}'
+)
+
 SIGNALS_JSONL_RESPONSE = (
     '{"id":"65f0a1b2c3d4e5f6a7b8c9d0","title":"Test Company Oy raises 12 MEUR"}\n'
     '{"id":"66001a2b3c4d5e6f7a8b9c0d","title":"New financial statement"}'
