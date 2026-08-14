@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "recipe": "Run Enrichment Agent to Single Business ID to Get Structured Data",
+    "source_url": "https://developers.vainu.com/v3/recipes/run-enrichment-agent-to-single-business-id-and-get-structured-data",
+    "endpoint": "POST https://api.vainu.io/api/v3/enrichment_agent/",
+    "note": "`prompt` is the id of an enrichment agent prompt you created in the Vainu UI — swap in your own before running."
+  },
+  "prompt": "CHANGEME",
+  "database": "FI",
+  "business_id": "FI23365096",
+  "refresh": false
+}

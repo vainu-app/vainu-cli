@@ -371,6 +371,28 @@ class VainuAPIBaseClient:
         ) as lines:
             yield lines
 
+    def enrichment_agent(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Run an enrichment agent prompt against one company.
+
+        `payload` carries the prompt id created in the Vainu UI, the `database`
+        and the `business_id`; `refresh: True` re-runs a prompt that already ran
+        for that company instead of reusing the cached answer. The result is not
+        paginated — it is a single object of the prompt's own fields under
+        `response`. There is no streaming variant for the same reason.
+        """
+        return parse_response(
+            self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/enrichment_agent/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
     def close(self) -> None:
         self._http.close()
 
@@ -386,8 +408,9 @@ class VainuAPIKeySyncClient(VainuAPIBaseClient):
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
-        super().__init__(base_url=base_url, language=language)
+        super().__init__(base_url=base_url, language=language, timeout=timeout)
         if not api_key:
             raise ValueError("api_key must not be empty. Set VAINU_API_KEY or pass api_key=...")
         self.api_key = api_key
@@ -404,8 +427,9 @@ class VainuJWTSyncClient(VainuAPIBaseClient):
         refresh_token: str,
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
-        super().__init__(base_url=base_url, language=language)
+        super().__init__(base_url=base_url, language=language, timeout=timeout)
         if not refresh_token:
             raise ValueError("refresh_token must not be empty.")
         self.jwt_token = refresh_token
@@ -447,8 +471,9 @@ class VainuOAuthSyncClient(VainuAPIBaseClient):
         base_url: str = DEFAULT_BASE_URL,
         language: str | None = None,
         token_cache: bool | None = None,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
-        super().__init__(base_url=base_url, language=language)
+        super().__init__(base_url=base_url, language=language, timeout=timeout)
         if not client_id or not client_secret:
             raise ValueError(
                 "client_id and client_secret are required. "
