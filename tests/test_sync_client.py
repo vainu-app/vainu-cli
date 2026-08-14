@@ -277,7 +277,7 @@ class TestVainuAPIKeySyncClientOrganizationLists:
         )
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.organization_list_static_create(
-            {"name": "My Static List", "country": "FI", "business_ids": ["FI21197914"]}
+            {"name": "My Static List", "country": "FI", "business_ids": ["FI01234567"]}
         )
         assert result["id"] == STATIC_LIST_RESPONSE["id"]
 
@@ -289,7 +289,7 @@ class TestVainuAPIKeySyncClientOrganizationLists:
             status=204,
         )
         client = VainuAPIKeySyncClient(api_key="test-key")
-        client.organization_list_static_add("63d8de4eb7dfe9f5896fa540", ["FI21197914"])
+        client.organization_list_static_add("63d8de4eb7dfe9f5896fa540", ["FI01234567"])
 
     @resp.activate
     def test_organization_list_dynamic_update(self):

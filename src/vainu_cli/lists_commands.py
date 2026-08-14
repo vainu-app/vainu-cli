@@ -267,7 +267,7 @@ def static_delete(config: Any, list_id: str) -> None:
 def static_add(config: Any, list_id: str, payload_path: str) -> None:
     """Add business IDs to a static list.
 
-    `--payload` must be a JSON array of business IDs, e.g. `["FI21197914"]`.
+    `--payload` must be a JSON array of business IDs, e.g. `["FI01234567"]`.
     """
     payload = _load_payload_file(payload_path)
     if not isinstance(payload, list):

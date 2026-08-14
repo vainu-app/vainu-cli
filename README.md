@@ -369,15 +369,15 @@ EOF
 vainu lists dynamic create --payload dynamic.json
 ```
 
-Create a static list and add/remove companies:
+Create a static list and add/remove companies (replace placeholder business IDs with your own):
 
 ```bash
 vainu lists static create --payload - <<'EOF'
-{"name": "Targets", "country": "FI", "business_ids": ["FI21197914"]}
+{"name": "Targets", "country": "FI", "business_ids": ["FI01234567"]}
 EOF
 
-echo '["FI17101289"]' | vainu lists static add LIST_ID --payload -
-echo '["FI21197914"]' | vainu lists static remove LIST_ID --payload -
+echo '["FI07654321"]' | vainu lists static add LIST_ID --payload -
+echo '["FI01234567"]' | vainu lists static remove LIST_ID --payload -
 ```
 
 Rename or replace membership via update:
@@ -402,7 +402,7 @@ Notes:
   lists do not — edit the `query` with `vainu lists dynamic update` instead.
 - `country` is immutable after creation.
 - Each `business_id` must match the list country prefix (`FI…`, `SE…`, etc.).
-- Add/remove payloads must be a JSON **array** of ids, e.g. `["FI21197914"]`, not an object.
+- Add/remove payloads must be a JSON **array** of ids, e.g. `["FI01234567"]`, not an object.
 
 ---
 

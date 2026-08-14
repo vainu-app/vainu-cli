@@ -1199,7 +1199,7 @@ class TestLists:
                 "--payload",
                 "-",
             ],
-            input='["FI21197914"]',
+            input='["FI01234567"]',
             catch_exceptions=False,
         )
         assert result.exit_code == 0
@@ -1244,7 +1244,7 @@ class TestLists:
                 "--payload",
                 "-",
             ],
-            input='{"business_ids": ["FI21197914"]}',
+            input='{"business_ids": ["FI01234567"]}',
         )
         assert result.exit_code != 0
         assert "JSON array" in result.output
