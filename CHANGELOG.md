@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- [AGENTS.md](AGENTS.md) — setup guide for Cursor/Claude Code/Codex (MCP config + uv CLI fallback)
+- [AGENTS.md](AGENTS.md) — setup guide for Cursor/Claude Code/Codex (uv CLI install + agent skills)
 - Cross-agent CLI skill under [skills/vainu-cli/](skills/vainu-cli/) (symlinked to `.cursor/skills/`, `.claude/skills/`, `.agents/skills/`)
 - `scripts/install-skills.sh` — copy skill to personal agent directories
 - `scripts/install.sh` — one-line install via uv (`curl … | sh` or `./scripts/install.sh --local`)
