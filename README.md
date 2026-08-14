@@ -7,13 +7,17 @@
 CLI and Python client library for the [Vainu](https://vainu.com) company data API.
 Query Nordic company data, export large datasets, and integrate Vainu into your workflows.
 
+**New here?** Follow [SETUP.md](SETUP.md) for a step-by-step install guide (Mac, Windows, Linux) — no coding required.
+
 ---
 
 ## Installation
 
+**Non-technical users:** see **[SETUP.md](SETUP.md)** — copy one command, sign in, run your first search.
+
 **Using with AI agents?** See [AGENTS.md](AGENTS.md) and the
 [`vainu-cli` skill](skills/vainu-cli/SKILL.md). Install with `./scripts/install.sh`
-or `uv tool install vainu-cli` — no manual Python setup required.
+(Mac/Linux) or `./scripts/install.ps1` (Windows), or `uv tool install vainu-cli`.
 
 ```bash
 pip install vainu-cli
