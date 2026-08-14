@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [AGENTS.md](AGENTS.md) — setup guide for Cursor/Claude Code (MCP config + uv CLI fallback)
+- `scripts/install.sh` — one-line install via uv (`curl … | sh` or `./scripts/install.sh --local`)
+- Example payloads bundled in the wheel under `vainu_cli/example_payloads/`
+- `vainu examples list` and `vainu examples path` to discover bundled payloads after install
 - Line-by-line streaming on `companies`, `organizations`, `signals-news` and
   `signals-data-changes`, **on by default** for `--format jsonl` and `csv`: each line is written
   as it arrives instead of the whole body being buffered first. `--no-stream` restores the

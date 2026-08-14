@@ -40,6 +40,7 @@ from vainu_cli.auth.commands import (
     login_command,
     logout_command,
 )
+from vainu_cli.examples_commands import examples_group
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
 from vainu_cli.common import (
     PUBLIC_CLIENT_ID,
@@ -850,3 +851,4 @@ def signals_data_changes_search(
 main.add_command(auth_group, name="auth")
 main.add_command(login_command, name="login")
 main.add_command(logout_command, name="logout")
+main.add_command(examples_group, name="examples")
