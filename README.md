@@ -11,6 +11,9 @@ Query Nordic company data, export large datasets, and integrate Vainu into your 
 
 ## Installation
 
+**Using with AI agents?** See [AGENTS.md](AGENTS.md) — the hosted MCP server needs no
+Python install; for CLI use, run `./scripts/install.sh` or `uv tool install vainu-cli`.
+
 ```bash
 pip install vainu-cli
 ```
