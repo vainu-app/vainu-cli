@@ -1,17 +1,17 @@
 ---
 name: vainu-cli
-description: Install, authenticate, and run the vainu-cli for Nordic company data — organizations search, bulk export, signals, and shell pipelines. Use when the user asks to query Vainu via terminal, vainu commands, JSONL/CSV export, CI automation, or when MCP is unavailable.
+description: Install, authenticate, and run the vainu-cli for Nordic company data — organizations search, bulk export, signals, and shell pipelines. Use when the user asks to query Vainu via terminal, vainu commands, JSONL/CSV export, or CI automation.
 ---
 
 # vainu-cli
 
-CLI and Python client for the [Vainu](https://vainu.com) API. Prefer **Vainu MCP** for interactive IDE research; use this skill for terminal workflows, bulk exports, and scripting.
+CLI and Python client for the [Vainu](https://vainu.com) API.
 
-## When to use CLI vs MCP
+## Common use cases
 
-| Task | Use |
-|------|-----|
-| IDE research, VQL discovery, documents | MCP (`https://mcp.vainu.ai/mcp`) |
+| Task | Approach |
+|------|----------|
+| Company / organization search | `vainu organizations --payload ...` |
 | Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |
 | CI / cron / offline scripts | CLI or Python library |
@@ -87,4 +87,4 @@ Large result sets: use `*-async` with `--format jsonl --output file.jsonl`.
 - [organizations.md](organizations.md) — VQL payload patterns for `vainu organizations*`
 - [signals.md](signals.md) — payload rules for `vainu signals-*`
 - [README.md](../../README.md) — full CLI reference
-- [AGENTS.md](../../AGENTS.md) — MCP setup and cross-agent install notes
+- [AGENTS.md](../../AGENTS.md) — agent setup and cross-agent install notes

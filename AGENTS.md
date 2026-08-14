@@ -1,59 +1,15 @@
 # Using Vainu with AI agents
 
 This guide is for Cursor, Claude Code, ChatGPT Codex, and other agent-assisted
-workflows. Users do not need Python or pip knowledge if they follow the MCP path
-below.
+workflows. **Use vainu-cli via `uv`** — no manual Python or pip setup required.
 
 For detailed **CLI workflows** (VQL payloads, signals, auth, exports), load the
 `vainu-cli` agent skill — see [Agent skills](#agent-skills) below.
 
-## Recommended: Vainu MCP (no install)
+## Install vainu-cli via uv
 
-Add the hosted Vainu MCP server to your IDE. The agent gets typed tools for company
-search, signals, documents, and saved lists — with OAuth handled by the IDE.
-
-### Cursor
-
-1. Open **Settings → MCP → Add server** (or edit `~/.cursor/mcp.json`).
-2. Paste the snippet below, replacing the placeholders with credentials from your
-   Vainu account.
-3. Save and restart MCP / reload the window. Sign in when prompted on first use.
-
-```json
-{
-  "mcpServers": {
-    "vainu": {
-      "url": "https://mcp.vainu.ai/mcp",
-      "auth": {
-        "CLIENT_ID": "<your-client-id>",
-        "CLIENT_SECRET": "<your-client-secret>",
-        "scopes": ["offline_access", "vainu:mcp"]
-      }
-    }
-  }
-}
-```
-
-### Claude Code / other MCP clients
-
-Use the same URL and OAuth client credentials. Consult your client's MCP
-configuration docs for the exact JSON shape.
-
-### When to use MCP
-
-- Natural-language company research and list building
-- Exploring VQL filters (`search_filter_values` → `validate_query` → `query_organizations`)
-- News and data-change signals
-- Document search
-- Anything where the agent should discover tools and iterate on queries
-
----
-
-## Fallback: vainu-cli via uv
-
-Use the CLI when you need bulk exports, shell pipelines, CI jobs, or the Python
-library. **Do not ask users to run `pip install`.** Use `uv` instead — it bootstraps
-Python automatically.
+**Do not ask users to run `pip install`.** Use `uv` instead — it bootstraps Python
+automatically.
 
 ### One-line install (agent-runnable)
 
@@ -115,12 +71,12 @@ carries detailed CLI instructions (VQL, signals, exports).
 
 ---
 
-## MCP vs CLI — quick reference
+## CLI use cases
 
-| Task | Use |
-|------|-----|
-| Agent-driven research in the IDE | MCP |
-| Bulk async export to JSONL/CSV | CLI (`*-async` commands) |
+| Task | Approach |
+|------|----------|
+| Company / organization search | `vainu organizations --payload ...` |
+| Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |
 | CI / cron automation | CLI or Python library |
 | Custom Python integration | `from vainu_cli import VainuAPIKeyClient` |
@@ -131,12 +87,10 @@ carries detailed CLI instructions (VQL, signals, exports).
 
 If you are an AI agent helping a user set up Vainu:
 
-1. **Prefer MCP.** Add the JSON config from above to the user's MCP settings. No
-   terminal install is required.
-2. **If MCP is unavailable**, run the install script or `uv tool install vainu-cli`,
-   then `vainu login`.
-3. **For API calls via CLI**, load the `vainu-cli` skill or run `vainu examples list`
-   and `vainu examples path <name>` — do not hand-write JSON unless necessary.
+1. Run the install script or `uv tool install vainu-cli`, then `vainu login`.
+2. Load the `vainu-cli` skill for command routing and payload patterns.
+3. Use bundled examples: `vainu examples list` and `vainu examples path <name>` — do not
+   hand-write JSON unless necessary.
 4. **Signals commands** require OAuth (`--auth-method oauth` or `vainu login`), not
    a static API key alone.
 5. See [skills/vainu-cli/SKILL.md](skills/vainu-cli/SKILL.md) and [README.md](README.md)
