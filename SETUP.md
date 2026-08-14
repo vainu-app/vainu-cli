@@ -105,6 +105,7 @@ You get JSON with company details. That's it.
 | Windows: command not found | Close PowerShell completely and reopen. Check `%USERPROFILE%\.local\bin` exists. |
 | Login browser does not open | Run `vainu login --no-browser` and open the printed URL manually. |
 | Signals commands fail | Signals need OAuth — use `vainu login`, not an API key alone. |
+| Want the latest CLI | Run `vainu update` (or `vainu upgrade`). |
 
 Run `vainu doctor` anytime to diagnose install and auth issues.
 
@@ -122,4 +123,5 @@ optional skill installation (`scripts/install-skills.sh` on Mac/Linux).
 - [README.md](README.md) — full command reference
 - [skills/vainu-cli/SKILL.md](skills/vainu-cli/SKILL.md) — guide for AI agents
 - `vainu examples list` — browse ready-made search templates
+- `vainu update` — upgrade to the latest version
 - `vainu --help` — list all commands

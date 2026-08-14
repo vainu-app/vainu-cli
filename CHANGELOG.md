@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vainu update` / `vainu upgrade` — upgrade the CLI to the latest PyPI release
+  (`uv tool upgrade`, with a `pip` fallback if uv is not installed)
 - `vainu fields organizations` — inspect organization field metadata from
   `GET /v3/organizations_fields/`, including which paths are filterable vs returnable
   and which require an extra account permission
@@ -49,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filtering, keyword monitoring and JSON Lines paging
 - Example Organizations API request bodies under `example_payloads/organizations_api/`, with a
   README section cataloguing them and showing how to run each one through the CLI
+
+### Changed
+
+- README installation leads with the SETUP.md install scripts (`curl … | sh` /
+  `irm … | iex`) instead of `pip install`
+
+### Fixed
+
+- `scripts/install.sh` is POSIX `sh` compatible so `curl … | sh` works on
+  Linux where `/bin/sh` is dash (which rejects `set -o pipefail`)
 
 ## [0.1.0] - 2026-04-13
 

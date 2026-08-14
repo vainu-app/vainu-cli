@@ -81,8 +81,9 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "S"]
 ignore = [
     "S101",   # allow assert in tests
-    "S603",   # subprocess calls are intentional (curl download)
-    "S607",   # partial path for subprocess — curl is expected on PATH
+    "S404",   # subprocess import — vainu update runs uv/pip with a fixed argv
+    "S603",   # subprocess calls are intentional (uv/pip upgrade, curl download)
+    "S607",   # partial path for subprocess — curl/uv are expected on PATH
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -90,7 +91,7 @@ ignore = [
 
 [tool.bandit]
 exclude_dirs = ["tests"]
-skips = ["B101", "B603", "B607"]
+skips = ["B101", "B404", "B603", "B607"]
 
 [tool.coverage.run]
 source = ["src/vainu_cli"]

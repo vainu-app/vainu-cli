@@ -53,7 +53,7 @@ from vainu_cli.common import (
 from vainu_cli.examples_commands import examples_group
 from vainu_cli.fields_commands import fields_group
 from vainu_cli.lists_commands import lists_group
-from vainu_cli.setup_commands import doctor_command
+from vainu_cli.setup_commands import doctor_command, update_command, upgrade_command
 
 logger = logging.getLogger(__name__)
 
@@ -990,6 +990,8 @@ main.add_command(auth_group, name="auth")
 main.add_command(login_command, name="login")
 main.add_command(logout_command, name="logout")
 main.add_command(doctor_command, name="doctor")
+main.add_command(update_command, name="update")
+main.add_command(upgrade_command, name="upgrade")
 main.add_command(examples_group, name="examples")
 main.add_command(fields_group, name="fields")
 main.add_command(lists_group, name="lists")

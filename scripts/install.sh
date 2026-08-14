@@ -1,6 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Install vainu-cli using uv (bootstraps Python if needed).
-set -euo pipefail
+# POSIX sh: docs pipe this script to `sh`, which is dash on Debian/Ubuntu.
+set -eu
 
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 INSTALL_LOCAL=false
@@ -37,8 +38,8 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$INSTALL_LOCAL" == true ]]; then
-  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ "$INSTALL_LOCAL" = true ]; then
+  REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
   echo "Installing vainu-cli from ${REPO_ROOT}..."
   uv tool install --editable "${REPO_ROOT}"
 else
