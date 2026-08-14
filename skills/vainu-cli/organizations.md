@@ -1,0 +1,104 @@
+# Organizations API payloads (vainu organizations / organizations-async)
+
+All organization commands take a JSON POST body via `--payload FILE` or `--payload -` (stdin).
+
+## Payload structure
+
+```json
+{
+  "query": { "?EQ": { "business_id": "FI05381340" } },
+  "fields": ["business_id", "name"],
+  "database": "FI",
+  "limit": 100,
+  "offset": 0
+}
+```
+
+| Key | Purpose |
+|-----|---------|
+| `query` | VQL filter object (required) |
+| `database` | Country: `FI`, `SE`, `NO`, or `DK` |
+| `fields` | Output field paths to return |
+| `limit` | Page size (max 100) |
+| `offset` | Pagination offset |
+| `aggregation` | Subdocument aggregations (contacts, vehicles, etc.) |
+
+## Common VQL operators
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `?EQ` | equals | `{ "?EQ": { "business_id": "FI05381340" } }` |
+| `?GTE` | greater or equal | `{ "?GTE": { "financial_data.revenue": 100000000 } }` |
+| `?GT` | greater than | `{ "?GT": { "financial_data.revenue": 100000000 } }` |
+| `?IN` | in list | `{ "?IN": { "business_id": ["FI001", "FI002"] } }` |
+| `?ALL` | AND | `{ "?ALL": [ clause1, clause2 ] }` |
+| `?ANY` | OR | `{ "?ANY": [ clause1, clause2 ] }` |
+| `?MATCH` | subdocument filter | wrap contact filters on `contacts` |
+| `?AGGREGATE` | aggregation pipeline | see bundled `02-filter-contacts` |
+
+## Worked examples
+
+### Simple lookup by business_id
+
+Use bundled example `08-simple-filtering`:
+
+```bash
+vainu organizations --payload "$(vainu examples path 08-simple-filtering)"
+```
+
+### Revenue >= 100M in Finland
+
+```bash
+echo '{
+  "query": { "?GTE": { "financial_data.revenue": 100000000 } },
+  "fields": ["business_id", "name", "financial_data.revenue", "financial_data.year"],
+  "database": "FI",
+  "limit": 100
+}' | vainu organizations --payload -
+```
+
+Revenue is typically in local currency (EUR for FI).
+
+### CEO contacts only (aggregation)
+
+```bash
+vainu organizations --payload "$(vainu examples path 02-filter-contacts)"
+```
+
+### Large export to JSONL
+
+```bash
+vainu organizations-async \
+  --payload "$(vainu examples path 04-get-all-companies-in-vainu-list-async-sync)" \
+  --format jsonl \
+  --output companies.jsonl
+```
+
+Replace the `list` placeholder ID in that example with the user's saved list ID before running.
+
+### Stream to jq
+
+```bash
+vainu organizations \
+  --payload payload.json \
+  --format jsonl | jq -r .business_id
+```
+
+## Pitfalls
+
+- `limit` is capped at **100** per request — page with `offset` or use `organizations-async`
+- The CLI does **not** expose `/v3/organizations/count/` or `/v3/organizations/search/` (fuzzy search)
+- Unknown field names in `query` are **silently ignored** — verify field paths in README or Vainu docs
+- For contact subdocument filters, use `?MATCH` on `contacts` or see bundled aggregation examples
+
+## Bundled examples index
+
+Run `vainu examples list --category organizations_api` for the full list. Key files:
+
+| Partial name | Use case |
+|--------------|----------|
+| `08-simple-filtering` | Minimal exact-match filter |
+| `02-filter-contacts` | Return only CEO / Privacy Officer contacts |
+| `04-get-all-companies-in-vainu-list-async-sync` | Export a saved Vainu list |
+| `10-technology-search-shopify` | Technology field filter |
+| `07-search-companies-with-geo-sphere` | Geo sphere search |
