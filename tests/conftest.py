@@ -150,6 +150,46 @@ JWT_TOKEN_RESPONSE = {
     "expires_in": 3600,
 }
 
+ORGANIZATION_LISTS_RESPONSE = [
+    {
+        "id": "63d8de4eb7dfe9f5896fa539",
+        "name": "Finland + Revenue +1M EUR",
+        "country": "FI",
+        "type": "dynamic-organization-list",
+        "query": '{"?GTE": {"financial_data.revenue": 1000000}}',
+        "created": "2023-01-31T09:24:30.201000",
+        "modified": "2023-04-29T11:48:51.054000",
+        "privileges": {"current": "owner", "shared_count": 0},
+        "migrated_from_legacy_list": None,
+    }
+]
+
+STATIC_LIST_RESPONSE = {
+    "id": "63d8de4eb7dfe9f5896fa540",
+    "name": "My Static List",
+    "country": "FI",
+    "type": "static-organization-list",
+    "query": "",
+    "created": "2023-01-31T09:24:30.201000",
+    "modified": "2023-04-29T11:48:51.054000",
+    "privileges": {"current": "owner", "shared_count": 0},
+    "migrated_from_legacy_list": None,
+}
+
+DYNAMIC_LIST_RESPONSE = {
+    "id": "69e61e048c5d1ae30b426a1b",
+    "name": "Swedish Manufacturers",
+    "country": "SE",
+    "type": "dynamic-organization-list",
+    "query": '{"?ALL": [{"?IN": {"official_industries.code": ["25"]}}]}',
+    "created": "2026-04-20T12:37:24.397523",
+    "modified": "2026-04-20T12:37:24.403035",
+    "privileges": {"current": "owner", "shared_count": 0},
+    "migrated_from_legacy_list": None,
+    "scoring": None,
+    "query_metadata": None,
+}
+
 
 @pytest.fixture
 def runner() -> CliRunner:

@@ -410,6 +410,186 @@ class VainuAPIBaseClient:
             format,
         )
 
+    async def organization_lists(
+        self,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        """List all accessible organization lists (static and dynamic)."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/lists/organizations/?format={format}",
+            ),
+            format,
+        )
+
+    async def organization_list_get(
+        self,
+        list_id: str,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Retrieve one organization list summary by id."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/lists/organizations/{list_id}/?format={format}",
+            ),
+            format,
+        )
+
+    async def organization_list_delete(self, list_id: str) -> None:
+        """Delete an organization list (static or dynamic) by id."""
+        (await self.request(
+            method=http.HTTPMethod.DELETE,
+            path=f"/v3/lists/organizations/{list_id}/",
+        )).raise_for_status()
+
+    async def organization_lists_static(
+        self,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        """List static organization lists."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/lists/organizations/static/?format={format}",
+            ),
+            format,
+        )
+
+    async def organization_list_static_get(
+        self,
+        list_id: str,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Retrieve one static organization list."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/lists/organizations/static/{list_id}/?format={format}",
+            ),
+            format,
+        )
+
+    async def organization_list_static_create(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Create a static organization list."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/lists/organizations/static/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    async def organization_list_static_update(
+        self,
+        list_id: str,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Partially update a static organization list."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.PATCH,
+                path=f"/v3/lists/organizations/static/{list_id}/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    async def organization_list_static_delete(self, list_id: str) -> None:
+        """Delete a static organization list."""
+        (await self.request(
+            method=http.HTTPMethod.DELETE,
+            path=f"/v3/lists/organizations/static/{list_id}/",
+        )).raise_for_status()
+
+    async def organization_list_static_add(self, list_id: str, business_ids: list[str]) -> None:
+        """Add business IDs to a static organization list."""
+        (await self.request(
+            method=http.HTTPMethod.PATCH,
+            path=f"/v3/lists/organizations/static/{list_id}/add/",
+            json=business_ids,
+        )).raise_for_status()
+
+    async def organization_list_static_remove(self, list_id: str, business_ids: list[str]) -> None:
+        """Remove business IDs from a static organization list."""
+        (await self.request(
+            method=http.HTTPMethod.PATCH,
+            path=f"/v3/lists/organizations/static/{list_id}/remove/",
+            json=business_ids,
+        )).raise_for_status()
+
+    async def organization_lists_dynamic(
+        self,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> list | str:
+        """List dynamic organization lists."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/lists/organizations/dynamic/?format={format}",
+            ),
+            format,
+        )
+
+    async def organization_list_dynamic_get(
+        self,
+        list_id: str,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Retrieve one dynamic organization list."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.GET,
+                path=f"/v3/lists/organizations/dynamic/{list_id}/?format={format}",
+            ),
+            format,
+        )
+
+    async def organization_list_dynamic_create(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Create a dynamic organization list."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/lists/organizations/dynamic/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    async def organization_list_dynamic_update(
+        self,
+        list_id: str,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | str:
+        """Partially update a dynamic organization list."""
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.PATCH,
+                path=f"/v3/lists/organizations/dynamic/{list_id}/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    async def organization_list_dynamic_delete(self, list_id: str) -> None:
+        """Delete a dynamic organization list."""
+        (await self.request(
+            method=http.HTTPMethod.DELETE,
+            path=f"/v3/lists/organizations/dynamic/{list_id}/",
+        )).raise_for_status()
+
     async def close(self) -> None:
         await self._http.aclose()
 
