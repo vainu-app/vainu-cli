@@ -271,7 +271,9 @@ def static_add(config: Any, list_id: str, payload_path: str) -> None:
     """
     payload = _load_payload_file(payload_path)
     if not isinstance(payload, list):
-        raise click.UsageError("--payload must be a JSON array of business IDs for lists static add.")
+        raise click.UsageError(
+            "--payload must be a JSON array of business IDs for lists static add."
+        )
     _run_lists_command(
         config,
         task_name="lists-static-add",
