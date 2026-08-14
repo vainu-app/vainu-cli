@@ -8,7 +8,11 @@ import time
 from vainu_cli._async_client import VainuJWTAPIClient
 from vainu_cli._sync_client import VainuJWTSyncClient
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
-from vainu_cli.common import DEFAULT_BASE_URL, OAUTH_TOKEN_ENDPOINT
+from vainu_cli.common import (
+    DEFAULT_BASE_URL,
+    DEFAULT_TIMEOUT_SECONDS,
+    OAUTH_TOKEN_ENDPOINT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ class VainuBrowserAuthSyncClient(VainuJWTSyncClient):
         store: TokenStore | None,
         base_url: str | None = None,
         language: str | None = None,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         # Bypass VainuJWTSyncClient.__init__'s empty-token check by passing a
         # placeholder; we never use self.jwt_token in this subclass.
@@ -45,6 +50,7 @@ class VainuBrowserAuthSyncClient(VainuJWTSyncClient):
             refresh_token=stored.refresh_token or "<browser>",
             base_url=base_url or stored.base_url or DEFAULT_BASE_URL,
             language=language,
+            timeout=timeout,
         )
         self._stored = stored
         self._store = store
@@ -90,11 +96,13 @@ class VainuBrowserAuthAPIClient(VainuJWTAPIClient):
         store: TokenStore | None,
         base_url: str | None = None,
         language: str | None = None,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         super().__init__(
             refresh_token=stored.refresh_token or "<browser>",
             base_url=base_url or stored.base_url or DEFAULT_BASE_URL,
             language=language,
+            timeout=timeout,
         )
         self._stored = stored
         self._store = store
