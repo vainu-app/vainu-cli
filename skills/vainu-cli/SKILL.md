@@ -1,6 +1,6 @@
 ---
 name: vainu-cli
-description: Install, authenticate, and run the vainu-cli for Nordic company data — organizations search, bulk export, signals, and shell pipelines. Use when the user asks to query Vainu via terminal, vainu commands, JSONL/CSV export, or CI automation.
+description: Install, authenticate, and run the vainu-cli for Nordic company data — organizations search, field discovery, bulk export, signals, and shell pipelines. Use when the user asks to query Vainu via terminal, vainu commands, available/filterable fields, JSONL/CSV export, or CI automation.
 ---
 
 # vainu-cli
@@ -12,6 +12,7 @@ CLI and Python client for the [Vainu](https://vainu.com) API.
 | Task | Approach |
 |------|----------|
 | Company / organization search | `vainu organizations --payload ...` |
+| Find filterable / output field paths | `vainu fields organizations` |
 | Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |
 | CI / cron / offline scripts | CLI or Python library |
