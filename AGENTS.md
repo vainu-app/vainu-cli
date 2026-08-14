@@ -1,7 +1,11 @@
 # Using Vainu with AI agents
 
-This guide is for Cursor, Claude Code, and other agent-assisted workflows. Users do
-not need Python or pip knowledge if they follow the MCP path below.
+This guide is for Cursor, Claude Code, ChatGPT Codex, and other agent-assisted
+workflows. Users do not need Python or pip knowledge if they follow the MCP path
+below.
+
+For detailed **CLI workflows** (VQL payloads, signals, auth, exports), load the
+`vainu-cli` agent skill — see [Agent skills](#agent-skills) below.
 
 ## Recommended: Vainu MCP (no install)
 
@@ -83,59 +87,31 @@ uvx vainu-cli --version
 vainu login
 ```
 
-Or set credentials via environment variables:
+See the `vainu-cli` skill ([skills/vainu-cli/SKILL.md](skills/vainu-cli/SKILL.md)) for
+auth options (API key, OAuth, JWT) and command routing.
+
+---
+
+## Agent skills
+
+Canonical skill source: [skills/vainu-cli/](skills/vainu-cli/) (`SKILL.md` + reference
+files). Repo symlinks wire it into each tool's discovery path:
+
+| Tool | Project path |
+|------|----------------|
+| Cursor | `.cursor/skills/vainu-cli/` |
+| Claude Code | `.claude/skills/vainu-cli/` (invoke as `/vainu-cli`) |
+| ChatGPT Codex | `.agents/skills/vainu-cli/` |
+
+**Personal install** (PyPI/uv users without cloning the repo):
 
 ```bash
-export VAINU_API_KEY=your-api-key
-# OAuth (required for signals commands):
-export VAINU_CLIENT_ID=your-client-id
-export VAINU_CLIENT_SECRET=your-client-secret
+./scripts/install-skills.sh              # ~/.cursor, ~/.claude, ~/.agents
+./scripts/install-skills.sh --codex-only
 ```
 
-### Bundled example payloads
-
-Example request bodies ship inside the installed package. List them:
-
-```bash
-vainu examples list
-vainu examples list --category organizations_api
-```
-
-Resolve a path for `--payload`:
-
-```bash
-vainu organizations --payload "$(vainu examples path 08-simple-filtering)"
-vainu signals-news --payload "$(vainu examples path 01-news-signals-for-one-company)"
-```
-
-From Python:
-
-```python
-from vainu_cli.examples import examples_dir, resolve_example
-
-print(examples_dir())
-print(resolve_example("08-simple-filtering"))
-```
-
-### Common CLI commands
-
-```bash
-# Quick company lookup (API key)
-vainu companies --query "?country=FI&business_id=FI01320292"
-
-# Organizations search with a JSON payload
-vainu organizations --payload "$(vainu examples path 08-simple-filtering)"
-
-# Large export to file
-vainu organizations-async \
-  --payload "$(vainu examples path 04-get-all-companies-in-vainu-list-async-sync)" \
-  --format jsonl \
-  --output companies.jsonl
-
-# Signals (OAuth required)
-vainu --auth-method oauth signals-news \
-  --payload "$(vainu examples path 01-news-signals-for-one-company)"
-```
+Codex also reads this `AGENTS.md` every session — keep it for setup routing; the skill
+carries detailed CLI instructions (VQL, signals, exports).
 
 ---
 
@@ -159,9 +135,9 @@ If you are an AI agent helping a user set up Vainu:
    terminal install is required.
 2. **If MCP is unavailable**, run the install script or `uv tool install vainu-cli`,
    then `vainu login`.
-3. **For API calls via CLI**, use bundled examples: `vainu examples list` and
-   `vainu examples path <name>` — do not ask the user to hand-write JSON unless
-   necessary.
+3. **For API calls via CLI**, load the `vainu-cli` skill or run `vainu examples list`
+   and `vainu examples path <name>` — do not hand-write JSON unless necessary.
 4. **Signals commands** require OAuth (`--auth-method oauth` or `vainu login`), not
    a static API key alone.
-5. See [README.md](README.md) for full CLI reference and payload documentation.
+5. See [skills/vainu-cli/SKILL.md](skills/vainu-cli/SKILL.md) and [README.md](README.md)
+   for full CLI reference.
