@@ -164,6 +164,87 @@ ORGANIZATION_LISTS_RESPONSE = [
     }
 ]
 
+ORGANIZATION_FIELDS_RESPONSE = [
+    {
+        "main_category": "basic",
+        "sub_category": "main_location",
+        "api": {
+            "v2": {"path": "address", "name": "address"},
+            "v3": {"path": "address.street", "name": "street"},
+        },
+        "names": {
+            "aliases": [],
+            "translations": {"en": "Street (Main Postal Address)"},
+        },
+        "countries": ["FI"],
+        "databases": ["FI"],
+        "application_availability": ["connector", "export", "profile"],
+        "description": "Street part of the main postal address.",
+        "meta_data": {
+            "status": "active",
+            "obsoleted_by": None,
+            "normalisation": "raw",
+            "type": "string",
+            "sources": {"FI": ["registry"]},
+            "allowed_operators": ["EQ", "CONTAINS"],
+            "default_operator": "STARTSWITH",
+        },
+        "match_group": None,
+        "requires_permission": None,
+        "filter_values": None,
+    },
+    {
+        "main_category": "contacts",
+        "sub_category": "contacts",
+        "api": {
+            "v2": {"path": None, "name": None},
+            "v3": {"path": "contacts", "name": "contacts"},
+        },
+        "names": {"aliases": [], "translations": {"en": "Contacts"}},
+        "countries": ["FI"],
+        "databases": ["FI"],
+        "application_availability": ["filter"],
+        "description": "Contacts attached to the company.",
+        "meta_data": {
+            "status": "active",
+            "obsoleted_by": None,
+            "normalisation": "raw",
+            "type": "object_list",
+            "sources": {"FI": ["web", "linkedin"]},
+            "allowed_operators": ["EXISTS", "ISNULL"],
+            "default_operator": "EXISTS",
+        },
+        "match_group": None,
+        "requires_permission": None,
+        "filter_values": None,
+    },
+    {
+        "main_category": "contacts",
+        "sub_category": "contacts",
+        "api": {
+            "v2": {"path": None, "name": None},
+            "v3": {"path": "contacts.email", "name": "email"},
+        },
+        "names": {"aliases": [], "translations": {"en": "Email (Contact)"}},
+        "countries": ["FI"],
+        "databases": ["FI"],
+        "application_availability": ["export", "profile"],
+        "description": "Email address of a contact.",
+        "meta_data": {
+            "status": "active",
+            "obsoleted_by": None,
+            "normalisation": "raw",
+            "type": "string",
+            "sources": {"FI": ["web"]},
+            "allowed_operators": ["EXISTS", "ISNULL"],
+            "default_operator": "EXISTS",
+        },
+        "match_group": "contacts",
+        "requires_permission": ["data_catalogue_contact_details"],
+        "filter_values": None,
+    },
+]
+
 STATIC_LIST_RESPONSE = {
     "id": "63d8de4eb7dfe9f5896fa540",
     "name": "My Static List",

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vainu fields organizations` — inspect organization field metadata from
+  `GET /v3/organizations_fields/`, including which paths are filterable vs returnable
+  and which require an extra account permission
+- `organization_fields(api_versions)` on the async and sync clients
+
 - [SETUP.md](SETUP.md) — step-by-step install guide for non-technical users (Mac, Windows, Linux)
 - `scripts/install.ps1` — Windows PowerShell installer via uv
 - `vainu doctor` — verify install, auth, and bundled examples

@@ -23,6 +23,7 @@ from conftest import (
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
+    ORGANIZATION_FIELDS_RESPONSE,
     ORGANIZATION_LISTS_RESPONSE,
     ORGANIZATIONS_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
@@ -255,6 +256,18 @@ class TestVainuAPIKeySyncClientEnrichmentAgent:
 
 
 class TestVainuAPIKeySyncClientOrganizationLists:
+    @resp.activate
+    def test_organization_fields_get(self):
+        resp.add(
+            resp.GET,
+            f"{BASE_URL}/v3/organizations_fields/?api_versions=v3",
+            json=ORGANIZATION_FIELDS_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organization_fields()
+        assert isinstance(result, list)
+        assert result[0]["api"]["v3"]["path"] == "address.street"
+
     @resp.activate
     def test_organization_lists_get(self):
         resp.add(
