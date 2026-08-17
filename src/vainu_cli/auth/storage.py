@@ -49,11 +49,13 @@ CLIENT_CREDENTIALS_PREFIX = "cc-"
 # Keyring backends do not reliably wrap their platform errors in a KeyringError.
 # The Windows Credential Locker backend calls win32cred.CredWrite without a
 # try/except, so a refused write (e.g. a payload over the 2560-byte
-# CRED_MAX_CREDENTIAL_BLOB_SIZE, which a large access token can exceed) surfaces
-# as a raw pywintypes.error — an OSError subclass, not a KeyringError. The keyring
-# is best-effort here: any failure to reach it must land on the file backend
-# instead of aborting the command.
-_KEYRING_FAILURES = (keyring.errors.KeyringError, OSError)
+# CRED_MAX_CREDENTIAL_BLOB_SIZE, which a real token pair exceeds) surfaces as a
+# raw win32ctypes.pywin32.pywintypes.error, which derives straight from Exception
+# — not from OSError, and not from KeyringError — so no narrower tuple catches
+# it. The keyring is best-effort here: any failure to reach it must land on the
+# file backend instead of aborting the command, hence the deliberately broad
+# catch.
+_KEYRING_FAILURES = Exception
 ENV_TOKEN_CACHE = "VAINU_TOKEN_CACHE"  # noqa: S105  # nosec B105 — env var name, not a credential
 _CACHE_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
 

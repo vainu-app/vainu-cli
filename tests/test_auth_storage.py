@@ -100,9 +100,7 @@ class TestTokenStoreKeyringFallback:
         assert loaded.account == "bob"
 
     def test_falls_back_to_file_when_backend_leaks_an_oserror(self, monkeypatch):
-        # The Windows backend raises pywintypes.error (an OSError subclass, not a
-        # KeyringError) when CredWrite refuses the payload — e.g. an access token
-        # over the 2560-byte credential blob limit. That must not abort `login`.
+        # Some backends leak a raw OSError rather than a KeyringError.
         def _raise_oserror(*_a, **_kw):
             raise OSError(1783, "CredWrite", "The stub received bad data.")
 
@@ -116,6 +114,37 @@ class TestTokenStoreKeyringFallback:
         loaded = store.load()
         assert loaded is not None
         assert loaded.account == "dave"
+        assert store.backend == "file"
+        store.clear()
+        assert store.load() is None
+
+    def test_falls_back_to_file_when_windows_credwrite_refuses_the_payload(self, monkeypatch):
+        # keyring drives the Windows Credential Locker through pywin32-ctypes,
+        # whose pywintypes.error derives from Exception — not OSError, not
+        # KeyringError. CredWrite raises it (winerror 1783, "The stub received
+        # bad data") when the payload exceeds the 2560-byte credential blob
+        # limit, which a real access token + refresh token pair does. That must
+        # fall back to the file store instead of aborting `vainu login`.
+        class _PyWinTypesError(Exception):
+            def __init__(self, winerror, function, strerror):
+                self.winerror = winerror
+                self.funcname = function
+                self.strerror = strerror
+                super().__init__(winerror, function, strerror)
+
+        def _raise_credwrite(*_a, **_kw):
+            raise _PyWinTypesError(1783, "CredWrite", "The stub received bad data.")
+
+        monkeypatch.setattr("vainu_cli.auth.storage.keyring.set_password", _raise_credwrite)
+        monkeypatch.setattr("vainu_cli.auth.storage.keyring.get_password", _raise_credwrite)
+        monkeypatch.setattr("vainu_cli.auth.storage.keyring.delete_password", _raise_credwrite)
+
+        store = TokenStore(force_file=False)
+        store.save(_creds(account="erin"))
+        assert store.backend == "file"
+        loaded = store.load()
+        assert loaded is not None
+        assert loaded.account == "erin"
         assert store.backend == "file"
         store.clear()
         assert store.load() is None
