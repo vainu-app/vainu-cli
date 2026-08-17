@@ -173,11 +173,13 @@ vainu companies-async \
   --output finnish_companies.jsonl
 ```
 
-Search organizations with a JSON payload:
+Search organizations with a JSON payload. `--payload` takes inline JSON, a file path, or
+`-` to read stdin:
 
 ```bash
-echo '{"query": {"country": "SE"}}' | \
-  vainu organizations --payload -
+vainu organizations --payload '{"query": {"country": "SE"}}'
+vainu organizations --payload payload.json
+echo '{"query": {"country": "SE"}}' | vainu organizations --payload -
 ```
 
 ### Python library
@@ -289,12 +291,12 @@ Commands:
 ### `vainu companies`
 
 ```
---query TEXT         Query string, e.g. "?country=FI"
---payload FILE/-     JSON payload file or "-" for stdin
---payload-path FILE/-
---format             json | csv | jsonl  (default: json)
---stream/--no-stream Stream lines as they arrive (default on for csv/jsonl)
---output FILE        Write to file instead of stdout
+--query TEXT           Query string, e.g. "?country=FI"
+--payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin
+--payload-path ...     Alias for --payload
+--format               json | csv | jsonl  (default: json)
+--stream/--no-stream   Stream lines as they arrive (default on for csv/jsonl)
+--output FILE          Write to file instead of stdout
 ```
 
 ### `vainu companies-async`
@@ -302,13 +304,13 @@ Commands:
 Submits an async export job, polls until complete, and downloads the result.
 
 ```
---query TEXT         Query string
---payload FILE/-     JSON payload file or "-" for stdin
---payload-path FILE/-
---format             json | csv | jsonl  (default: json)
---output FILE        Output file (required)
---poll-interval INT  Polling interval in seconds (default: 3)
---timeout INT        Max wait seconds (default: 14400)
+--query TEXT           Query string
+--payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin
+--payload-path ...     Alias for --payload
+--format               json | csv | jsonl  (default: json)
+--output FILE          Output file (required)
+--poll-interval INT    Polling interval in seconds (default: 3)
+--timeout INT          Max wait seconds (default: 14400)
 ```
 
 ### `vainu organizations` / `vainu organizations-async`
@@ -400,16 +402,16 @@ prompt against one company and prints the structured fields the prompt defines.
 The prompt itself is built in the Vainu UI — this command only needs its id.
 
 ```
---prompt TEXT            Enrichment agent prompt id from the Vainu UI (required)
---business-id TEXT       Company business id, e.g. FI23365096 (required)
---database TEXT          Country database: FI | SE | NO | DK (required)
---refresh/--no-refresh   Re-run instead of reusing the cached answer
---payload FILE/-         JSON payload file or "-" for stdin (alternative to the flags above)
---payload-path FILE/-
---format                 json | jsonl  (default: json)
---language TEXT          Accept-Language header
---request-timeout INT    HTTP timeout in seconds (default: 121)
---output FILE            Write to file instead of stdout
+--prompt TEXT           Enrichment agent prompt id from the Vainu UI (required)
+--business-id TEXT      Company business id, e.g. FI23365096 (required)
+--database TEXT         Country database: FI | SE | NO | DK (required)
+--refresh/--no-refresh  Re-run instead of reusing the cached answer
+--payload JSON/FILE/-   Inline JSON, a file path, or "-" for stdin (alternative to the flags above)
+--payload-path ...      Alias for --payload
+--format                json | jsonl  (default: json)
+--language TEXT         Accept-Language header
+--request-timeout INT   HTTP timeout in seconds (default: 121)
+--output FILE           Write to file instead of stdout
 ```
 
 ```bash
@@ -446,12 +448,12 @@ Fetch signals from the v3 Signals API (beta): `signals-news` returns externally 
 changes in company records.
 
 ```
---payload FILE/-     JSON payload file or "-" for stdin (required)
---payload-path FILE/-
---format             json | jsonl  (default: json)
---stream/--no-stream Stream lines as they arrive (default on for jsonl)
---language TEXT      Accept-Language header
---output FILE        Write to file instead of stdout
+--payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin (required)
+--payload-path ...     Alias for --payload
+--format               json | jsonl  (default: json)
+--stream/--no-stream   Stream lines as they arrive (default on for jsonl)
+--language TEXT        Accept-Language header
+--output FILE          Write to file instead of stdout
 ```
 
 Both endpoints require an OAuth or JWT token — **the v3 API does not accept a static API key**.
@@ -493,16 +495,16 @@ vainu lists delete ID                    Delete any list by id
 
 vainu lists static                       List static lists
 vainu lists static get ID
-vainu lists static create --payload FILE/-   Required: name, country (FI|SE|NO|DK|NL)
-vainu lists static update ID --payload FILE/-
-vainu lists static add ID --payload FILE/-     JSON array of business IDs
-vainu lists static remove ID --payload FILE/-
+vainu lists static create --payload JSON/FILE/-   Required: name, country (FI|SE|NO|DK|NL)
+vainu lists static update ID --payload JSON/FILE/-
+vainu lists static add ID --payload JSON/FILE/-     JSON array of business IDs
+vainu lists static remove ID --payload JSON/FILE/-
 vainu lists static delete ID
 
 vainu lists dynamic                      List dynamic lists
 vainu lists dynamic get ID
-vainu lists dynamic create --payload FILE/-  Required: name, country, query (serialized VQL)
-vainu lists dynamic update ID --payload FILE/-
+vainu lists dynamic create --payload JSON/FILE/-  Required: name, country, query (serialized VQL)
+vainu lists dynamic update ID --payload JSON/FILE/-
 vainu lists dynamic delete ID
 
 --format             json | jsonl  (default: json)
