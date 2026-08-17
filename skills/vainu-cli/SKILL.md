@@ -90,6 +90,13 @@ vainu signals-news --payload "$(vainu examples path 01-news-signals-for-one-comp
 
 Adapt a bundled example by copying its path, editing fields, then passing to `--payload`.
 
+`--payload` accepts inline JSON as well as a file path or `-` for stdin, so a small
+one-off query needs no temp file:
+
+```bash
+vainu organizations --payload '{"database": "FI", "query": {...}}'
+```
+
 ## Output and streaming
 
 - `--format jsonl` and `csv` **stream by default** (line-by-line)

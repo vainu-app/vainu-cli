@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 from collections.abc import Callable
 from typing import Any, TypeVar
 
 import click
 
 from vainu_cli.common import LISTS_RESPONSE_FORMATS, ResponseFormat
+from vainu_cli.payloads import load_payload, option_payload
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -33,22 +32,6 @@ def _option_output(func: F) -> F:
         type=click.Path(),
         help="Write response to file instead of stdout.",
     )(func)
-
-
-def _option_payload(required: bool = True) -> Callable[[F], F]:
-    kwargs: dict[str, Any] = {
-        "required": required,
-        "type": click.Path(),
-        "help": "JSON payload file path, or '-' to read from stdin.",
-    }
-    if not required:
-        kwargs["default"] = None
-    return click.option(
-        "--payload",
-        "--payload-path",
-        "payload_path",
-        **kwargs,
-    )
 
 
 def _run_lists_command(
@@ -90,14 +73,6 @@ def _emit_result(result: Any, output: str | None) -> None:
 
 def _emit_no_content(message: str) -> None:
     click.echo(message, err=True)
-
-
-def _load_payload_file(payload_path: str) -> dict | list:
-    raw = sys.stdin.read() if payload_path == "-" else open(payload_path).read()  # noqa: SIM115
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
 
 
 @click.group("lists", invoke_without_command=True)
@@ -189,7 +164,7 @@ def static_get(config: Any, list_id: str, fmt: ResponseFormat, output: str | Non
 
 
 @static_group.command("create")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_lists_format
 @_option_output
 @click.pass_obj
@@ -204,7 +179,7 @@ def static_create(
     Required payload fields: `name`, `country` (FI, SE, NO, DK, or NL).
     Optional: `business_ids` (array of prefixed business IDs).
     """
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
     if not isinstance(payload, dict):
         raise click.UsageError("--payload must contain a JSON object for lists static create.")
     result = _run_lists_command(
@@ -218,7 +193,7 @@ def static_create(
 
 @static_group.command("update")
 @click.argument("list_id")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_lists_format
 @_option_output
 @click.pass_obj
@@ -230,7 +205,7 @@ def static_update(
     output: str | None,
 ) -> None:
     """Partially update a static list (name, business_ids, permissions, etc.)."""
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
     if not isinstance(payload, dict):
         raise click.UsageError("--payload must contain a JSON object for lists static update.")
     result = _run_lists_command(
@@ -262,14 +237,14 @@ def static_delete(config: Any, list_id: str) -> None:
 
 @static_group.command("add")
 @click.argument("list_id")
-@_option_payload(required=True)
+@option_payload(required=True)
 @click.pass_obj
 def static_add(config: Any, list_id: str, payload_path: str) -> None:
     """Add business IDs to a static list.
 
     `--payload` must be a JSON array of business IDs, e.g. `["FI01234567"]`.
     """
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
     if not isinstance(payload, list):
         raise click.UsageError(
             "--payload must be a JSON array of business IDs for lists static add."
@@ -285,14 +260,14 @@ def static_add(config: Any, list_id: str, payload_path: str) -> None:
 
 @static_group.command("remove")
 @click.argument("list_id")
-@_option_payload(required=True)
+@option_payload(required=True)
 @click.pass_obj
 def static_remove(config: Any, list_id: str, payload_path: str) -> None:
     """Remove business IDs from a static list.
 
     `--payload` must be a JSON array of business IDs.
     """
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
     if not isinstance(payload, list):
         raise click.UsageError(
             "--payload must be a JSON array of business IDs for lists static remove."
@@ -341,7 +316,7 @@ def dynamic_get(config: Any, list_id: str, fmt: ResponseFormat, output: str | No
 
 
 @dynamic_group.command("create")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_lists_format
 @_option_output
 @click.pass_obj
@@ -355,7 +330,7 @@ def dynamic_create(
 
     Required payload fields: `name`, `country`, and `query` (serialized VQL string).
     """
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
     if not isinstance(payload, dict):
         raise click.UsageError("--payload must contain a JSON object for lists dynamic create.")
     result = _run_lists_command(
@@ -369,7 +344,7 @@ def dynamic_create(
 
 @dynamic_group.command("update")
 @click.argument("list_id")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_lists_format
 @_option_output
 @click.pass_obj
@@ -381,7 +356,7 @@ def dynamic_update(
     output: str | None,
 ) -> None:
     """Partially update a dynamic list (name, query, scoring, etc.)."""
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
     if not isinstance(payload, dict):
         raise click.UsageError("--payload must contain a JSON object for lists dynamic update.")
     result = _run_lists_command(

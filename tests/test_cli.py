@@ -159,6 +159,38 @@ class TestCompaniesSearch:
         )
         assert result.exit_code == 0
 
+    @resp.activate
+    def test_payload_inline_json(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v2/companies/", json=COMPANIES_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "companies",
+                "--payload",
+                '{"filter": {"country": "FI"}}',
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body) == {"filter": {"country": "FI"}}
+
+    def test_payload_missing_file_reports_usage_error(self, runner, tmp_path):
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "companies",
+                "--payload",
+                str(tmp_path / "nope.json"),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "Cannot read --payload file" in result.output
+        assert "Traceback" not in result.output
+
     def test_query_and_payload_mutually_exclusive(self, runner):
         result = runner.invoke(
             main,
@@ -366,6 +398,17 @@ class TestOrganizationsSearch:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["count"] == 1
+
+    @resp.activate
+    def test_organizations_search_with_inline_json(self, runner):
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/", json=ORGANIZATIONS_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations", "--payload", '{"query": "vainu"}'],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body) == {"query": "vainu"}
 
     def test_organizations_search_requires_payload(self, runner):
         result = runner.invoke(
