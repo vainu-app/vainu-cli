@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import sys
 import time
 from collections.abc import AsyncIterable, Callable, Iterable
 from dataclasses import dataclass
@@ -53,6 +52,7 @@ from vainu_cli.common import (
 from vainu_cli.examples_commands import examples_group
 from vainu_cli.fields_commands import fields_group
 from vainu_cli.lists_commands import lists_group
+from vainu_cli.payloads import load_payload, load_query_or_payload, option_payload
 from vainu_cli.setup_commands import doctor_command, update_command, upgrade_command
 
 logger = logging.getLogger(__name__)
@@ -259,30 +259,6 @@ def _resolve_credentials(
     return "apikey", None, None
 
 
-def _load_payload(query: str | None, payload_path: str | None) -> str | dict:
-    """Resolve query string or JSON payload file/stdin into a payload value."""
-    if query and payload_path:
-        raise click.UsageError("--query and --payload are mutually exclusive.")
-    if not query and not payload_path:
-        raise click.UsageError("Provide either --query or --payload.")
-    if query:
-        return query
-    raw = sys.stdin.read() if payload_path == "-" else open(payload_path).read()  # noqa: SIM115
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
-
-
-def _load_payload_file(payload_path: str) -> dict:
-    """Read a required JSON payload from a file path, or '-' for stdin."""
-    raw = sys.stdin.read() if payload_path == "-" else open(payload_path).read()  # noqa: SIM115
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise click.UsageError(f"--payload is not valid JSON: {exc}") from exc
-
-
 def _write_output(data: dict | list | str, output: str | None) -> None:
     text = data if isinstance(data, str) else json.dumps(data, indent=2, ensure_ascii=False)
     if output:
@@ -343,22 +319,6 @@ def _resolve_stream(
 
 def _option_query(func: F) -> F:
     return click.option("--query", default=None, help="Query string (e.g. '?country=FI').")(func)
-
-
-def _option_payload(required: bool) -> Callable[[F], F]:
-    kwargs: dict[str, Any] = {
-        "required": required,
-        "type": click.Path(),
-        "help": "JSON payload file path, or '-' to read from stdin.",
-    }
-    if not required:
-        kwargs["default"] = None
-    return click.option(
-        "--payload",
-        "--payload-path",
-        "payload_path",
-        **kwargs,
-    )
 
 
 def _option_format(func: F) -> F:
@@ -558,7 +518,7 @@ def main(
 
 @main.command("companies")
 @_option_query
-@_option_payload(required=False)
+@option_payload(required=False)
 @_option_filter_base
 @_option_stream()
 @_option_output(required=False)
@@ -575,7 +535,7 @@ def companies_search(
 ) -> None:
     """Fetch company data (synchronous paginated result)."""
     stream = _resolve_stream(stream, fmt)
-    payload = _load_payload(query, payload_path)
+    payload = load_query_or_payload(query, payload_path)
 
     if stream:
         if config.async_mode:
@@ -619,7 +579,7 @@ def companies_search(
 
 @main.command("companies-async")
 @_option_query
-@_option_payload(required=False)
+@option_payload(required=False)
 @_option_filter_base
 @_option_output(required=True)
 @_option_poll_interval
@@ -637,7 +597,7 @@ def companies_export(
     timeout: int,
 ) -> None:
     """Export companies via async job — polls until complete and downloads to file."""
-    payload = _load_payload(query, payload_path)
+    payload = load_query_or_payload(query, payload_path)
 
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
@@ -660,7 +620,7 @@ def companies_export(
 
 
 @main.command("organizations")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_filter_base
 @_option_stream()
 @_option_output(required=False)
@@ -676,7 +636,7 @@ def organizations_search(
 ) -> None:
     """Fetch organization data (POST with JSON payload)."""
     stream = _resolve_stream(stream, fmt)
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
 
     if stream:
         if config.async_mode:
@@ -719,7 +679,7 @@ def organizations_search(
 
 
 @main.command("organizations-async")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_filter_base
 @_option_output(required=True)
 @_option_poll_interval
@@ -736,7 +696,7 @@ def organizations_export(
     timeout: int,
 ) -> None:
     """Export organizations via async job — polls until complete and downloads to file."""
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
 
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
@@ -772,7 +732,7 @@ def _enrichment_agent_payload(
     That order is what makes a saved payload reusable: keep the prompt id and
     database in a file and vary only `--business-id` per run.
     """
-    payload = _load_payload_file(payload_path) if payload_path else {}
+    payload = load_payload(payload_path) if payload_path else {}
     if not isinstance(payload, dict):
         raise click.UsageError("--payload must contain a JSON object for enrichment-agent.")
     overrides = {
@@ -805,7 +765,7 @@ def _enrichment_agent_payload(
     help="Re-run the prompt instead of reusing a cached answer. Re-running spends "
     "Vainu agent credits and is much slower, so the API reuses the cache by default.",
 )
-@_option_payload(required=False)
+@option_payload(required=False)
 @_option_enrichment_format
 @_option_language
 @click.option(
@@ -865,7 +825,7 @@ def enrichment_agent_run(
 
 
 @main.command("signals-news")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_signals_base
 @_option_stream(SIGNALS_RESPONSE_FORMATS)
 @_option_output(required=False)
@@ -881,7 +841,7 @@ def signals_news_search(
 ) -> None:
     """Fetch news signals (POST with JSON payload)."""
     stream = _resolve_stream(stream, fmt, SIGNALS_RESPONSE_FORMATS)
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
 
     if stream:
         if config.async_mode:
@@ -924,7 +884,7 @@ def signals_news_search(
 
 
 @main.command("signals-data-changes")
-@_option_payload(required=True)
+@option_payload(required=True)
 @_option_signals_base
 @_option_stream(SIGNALS_RESPONSE_FORMATS)
 @_option_output(required=False)
@@ -940,7 +900,7 @@ def signals_data_changes_search(
 ) -> None:
     """Fetch data-change signals (POST with JSON payload)."""
     stream = _resolve_stream(stream, fmt, SIGNALS_RESPONSE_FORMATS)
-    payload = _load_payload_file(payload_path)
+    payload = load_payload(payload_path)
 
     if stream:
         if config.async_mode:
