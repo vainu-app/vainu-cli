@@ -91,6 +91,7 @@ carries detailed CLI instructions (VQL, signals, exports).
 |------|----------|
 | Company / organization search | `vainu organizations --payload ...` |
 | Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
+| How many companies match a query | `vainu organizations-count --payload ...` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |
 | CI / cron automation | CLI or Python library |
 | Custom Python integration | `from vainu_cli import VainuAPIKeyClient` |

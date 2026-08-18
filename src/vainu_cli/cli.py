@@ -715,6 +715,140 @@ def organizations_export(
         click.echo(f"Export saved to {output}", err=True)
 
 
+# ── organizations count ──────────────────────────────────────────────────────
+
+
+def _organizations_count_payload(
+    payload_path: str | None,
+    database: str | None,
+    list_id: str | None,
+    recount: bool | None,
+    max_cache_age: int | None,
+) -> dict:
+    """Build the count body from a payload file, with explicit flags layered on top.
+
+    That order keeps a saved payload reusable: hold the query in a file and vary
+    only `--database`, or count a saved list without writing any JSON at all.
+    """
+    payload = load_payload(payload_path) if payload_path else {}
+    if not isinstance(payload, dict):
+        raise click.UsageError("--payload must contain a JSON object for organizations-count.")
+    overrides = {
+        "database": database,
+        "list": list_id,
+        "recount": recount,
+        "recount_if_cache_max_age": max_cache_age,
+    }
+    payload.update({key: value for key, value in overrides.items() if value is not None})
+    # A list carries its own query and database, so it stands in for both.
+    if not payload.get("list") and not (payload.get("query") and payload.get("database")):
+        raise click.UsageError(
+            "organizations-count needs --list, or a query plus --database — pass the "
+            "flag(s) or set the same keys in --payload."
+        )
+    return payload
+
+
+@main.command("organizations-count")
+@option_payload(required=False)
+@click.option("--database", default=None, help="Country database, e.g. FI, SE, NO or DK.")
+@click.option(
+    "--list",
+    "list_id",
+    default=None,
+    help="Count a saved Vainu list — it supplies its own query and database.",
+)
+@click.option(
+    "--recount/--no-recount",
+    default=None,
+    help="Force a fresh count instead of reusing the cached one.",
+)
+@click.option(
+    "--max-cache-age",
+    default=None,
+    type=int,
+    help="Recount if the cached count is older than this many seconds.",
+)
+@click.option(
+    "--wait/--no-wait",
+    default=True,
+    show_default=True,
+    help="Keep re-requesting until the count is ready. The API answers a cold cache with "
+    "count: null and status: scheduled, so --no-wait prints that first reply as-is.",
+)
+@_option_poll_interval
+@_option_timeout
+@_option_language
+@_option_output(required=False)
+@click.pass_obj
+@_timed_task("organizations-count")
+def organizations_count_cmd(
+    config: Config,
+    payload_path: str | None,
+    database: str | None,
+    list_id: str | None,
+    recount: bool | None,
+    max_cache_age: int | None,
+    wait: bool,
+    poll_interval: int,
+    timeout: int,
+    language: str | None,
+    output: str | None,
+) -> None:
+    """Count the organizations matching a query, without returning any rows.
+
+    Takes the same query and database as `organizations`, but returns only count
+    metadata — `fields`, `limit` and `offset` are ignored. Pipe through
+    `jq .count` for the bare number.
+
+    \b
+    Example:
+        vainu organizations-count --payload query.json --database FI
+        vainu organizations-count --list 68a1f2c9abcdef0123456789
+    """
+    payload = _organizations_count_payload(payload_path, database, list_id, recount, max_cache_age)
+
+    try:
+        if config.async_mode:
+
+            async def _run() -> dict:
+                client = _make_async_client(config, language=language)
+                try:
+                    return await client.organizations_count(
+                        payload=payload,
+                        wait=wait,
+                        poll_interval=poll_interval,
+                        max_wait_seconds=timeout,
+                    )
+                finally:
+                    await client.close()
+
+            result = asyncio.run(_run())
+        else:
+            client = _make_sync_client(config, language=language)
+            try:
+                result = client.organizations_count(
+                    payload=payload,
+                    wait=wait,
+                    poll_interval=poll_interval,
+                    max_wait_seconds=timeout,
+                )
+            finally:
+                client.close()
+    except TimeoutError as exc:
+        # The count keeps running server-side, so this is worth retrying rather
+        # than a dead end.
+        raise click.ClickException(
+            f"{exc}. The count is still running on the server — re-run the same command "
+            "to pick it up, or pass --no-wait to read the current status and eta_utc."
+        ) from exc
+
+    # Emit the body first: a failed count still carries a useful status and time.
+    _write_output(result, output)
+    if isinstance(result, dict) and result.get("status") == "error":
+        raise click.ClickException("The API reported status 'error' for this count.")
+
+
 # ── enrichment agent ─────────────────────────────────────────────────────────
 
 ENRICHMENT_AGENT_REQUIRED_KEYS = ("prompt", "database", "business_id")

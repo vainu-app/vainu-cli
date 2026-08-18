@@ -99,10 +99,34 @@ vainu organizations \
   --format jsonl | jq -r .business_id
 ```
 
+## Counting
+
+`vainu organizations-count` returns how many companies match, without any rows — use it to size a
+segment before exporting. Same `query` + `database` as `organizations`; `fields`, `limit` and
+`offset` are ignored.
+
+```bash
+vainu organizations-count --payload payload.json
+vainu organizations-count --list <list_id>          # count a saved list, no JSON needed
+vainu organizations-count --payload payload.json | jq .count
+```
+
+Flags `--database`, `--list`, `--recount` and `--max-cache-age` override the same payload keys.
+
+An `organizations` payload works as-is: `order` is stripped automatically (the count endpoint
+returns `400 invalid order by value` for any `order`), and `fields`/`limit`/`offset` are ignored.
+
+Counts are computed in the background, so the API answers a cold cache with
+`{"count": null, "status": "scheduled"}`. The command re-sends the payload until `status` leaves
+`scheduled`/`process` — pass `--no-wait` to get that first reply instead when you only need
+`status` and `eta_utc`. `status: "error"` exits non-zero. Response keys: `count`, `status`,
+`time`, `duration`, `rate_of_change`, `eta_utc`.
+
 ## Pitfalls
 
 - `limit` is capped at **100** per request — page with `offset` or use `organizations-async`
-- The CLI does **not** expose `/v3/organizations/count/` or `/v3/organizations/search/` (fuzzy search)
+- Counts come from `vainu organizations-count`, not `organizations` — see [Counting](#counting)
+- The CLI does **not** expose `/v3/organizations/search/` (fuzzy search)
 - Unknown field names in `query` are **silently ignored** — verify paths with `vainu fields organizations`
 - For contact subdocument filters, use `?MATCH` on `contacts` or see bundled aggregation examples
 
@@ -113,6 +137,8 @@ Run `vainu examples list --category organizations_api` for the full list. Key fi
 | Partial name | Use case |
 |--------------|----------|
 | `08-simple-filtering` | Minimal exact-match filter |
+| `01-amount-of-companies` | Count-only query — pair with `organizations-count` |
+| `12-count-companies-in-vainu-list` | Count a saved list — pair with `organizations-count` |
 | `02-filter-contacts` | Return only CEO / Privacy Officer contacts |
 | `04-get-all-companies-in-vainu-list-async-sync` | Export a saved Vainu list |
 | `10-technology-search-shopify` | Technology field filter |

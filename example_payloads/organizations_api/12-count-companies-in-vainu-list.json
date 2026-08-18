@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "recipe": "Count Companies in a Vainu List",
+    "source_url": "https://developers.vainu.com/docs/count-organizations-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/organizations/count/"
+  },
+  "list": "123abc-CHANGEME",
+  "async": false,
+  "recount_if_cache_max_age": 3600
+}

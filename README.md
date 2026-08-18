@@ -279,6 +279,7 @@ Commands:
   companies-async       Export company data via async job
   organizations         Fetch organization data
   organizations-async   Export organization data via async job
+  organizations-count   Count matching organizations without returning rows
   fields                Inspect organization field metadata
   enrichment-agent      Run an enrichment agent prompt against one company
   signals-news          Fetch news signals
@@ -324,6 +325,72 @@ they already download to a file in chunks.
 
 To see which field paths you can put in `query` vs the `fields` output list, use
 [`vainu fields organizations`](#vainu-fields).
+
+### `vainu organizations-count`
+
+Counts the organizations matching a query without returning any rows — the cheap way to size a
+segment before exporting it. Takes the same `query` and `database` as `organizations`, but
+`fields`, `limit` and `offset` are ignored: only count metadata comes back.
+
+A payload written for `organizations` can be passed straight to `organizations-count`. `order` is
+stripped before sending, because the count endpoint rejects it with
+`400 invalid order by value` for any value — sorting is meaningless when only a total comes back.
+
+```
+--payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin
+--payload-path ...     Alias for --payload
+--database TEXT      Country database, e.g. FI, SE, NO or DK
+--list TEXT          Count a saved Vainu list (supplies its own query and database)
+--recount/--no-recount   Force a fresh count instead of reusing the cached one
+--max-cache-age INT  Recount if the cached count is older than this many seconds
+--wait/--no-wait     Keep re-requesting until the count is ready (default: --wait)
+--poll-interval INT  Polling interval in seconds (default: 3)
+--timeout INT        Max wait seconds (default: 14400)
+--language TEXT      Accept-Language header
+--output FILE        Write to file instead of stdout
+```
+
+`--database`, `--list`, `--recount` and `--max-cache-age` override the same keys in `--payload`,
+so you can keep the query in a file and vary only the country:
+
+```bash
+vainu organizations-count --payload "$(vainu examples path 01-amount-of-companies)"
+vainu organizations-count --payload "$(vainu examples path 01-amount-of-companies)" --database SE
+
+# count a saved list without writing any JSON
+vainu organizations-count --list 68a1f2c9abcdef0123456789
+
+# inline JSON, no file needed
+vainu organizations-count --payload '{"query": {"?GTE": {"financial_data.revenue": 1000000}}, "database": "FI"}'
+
+# just the number, for scripting
+COUNT=$(vainu organizations-count --list 68a1f2c9abcdef0123456789 | jq .count)
+```
+
+The response is count metadata, not rows:
+
+```json
+{
+  "count": 180086,
+  "time": "2026-04-16T15:21:16.445551",
+  "status": "ready",
+  "duration": 164.5,
+  "rate_of_change": null,
+  "eta_utc": null
+}
+```
+
+**About `--wait`.** The API computes counts in the background and defaults to `async: true`, so a
+cold cache answers `{"count": null, "status": "scheduled"}` and the finished count is collected by
+re-sending the same payload. `--wait` (the default) does that for you until `status` leaves
+`scheduled`/`process`, tolerating a few transient network failures on the way. `--no-wait` prints
+that first reply as-is, which is what you want when you only need `status` and `eta_utc`:
+
+```bash
+vainu organizations-count --list 68a1f2c9abcdef0123456789 --recount --no-wait
+```
+
+A `status` of `error` prints the body and exits non-zero.
 
 ### `vainu update` / `vainu upgrade`
 
@@ -581,7 +648,7 @@ rest of the body and the API ignores it; drop it if you prefer a minimal request
 
 | File | What it shows | Notes |
 |---|---|---|
-| [`01-amount-of-companies-matching-the-query.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/01-amount-of-companies-matching-the-query.json) | Counting NO companies with revenue ≥ 1M | Targets `/v3/organizations/count/`, which the CLI does not reach |
+| [`01-amount-of-companies-matching-the-query.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/01-amount-of-companies-matching-the-query.json) | Counting NO companies with revenue ≥ 1M | Use with [`vainu organizations-count`](#vainu-organizations-count) |
 | [`02-filter-contacts-return-only-ceos-of-companies.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/02-filter-contacts-return-only-ceos-of-companies.json) | Subdocument aggregation returning only CEO / Privacy Officer contacts | |
 | [`03-geospatial-business-unit-search-returning-only-matching-business_units.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/03-geospatial-business-unit-search-returning-only-matching-business_units.json) | Geo sphere search with `unwind_subdocument` — only matching business units | |
 | [`04-get-all-companies-in-vainu-list-async-sync.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/04-get-all-companies-in-vainu-list-async-sync.json) | Every company in a saved Vainu list | `list` is a placeholder ID — swap in your own |
@@ -592,6 +659,7 @@ rest of the body and the API ignores it; drop it if you prefer a minimal request
 | [`09-simple-oauth-client-credentials-example.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/09-simple-oauth-client-credentials-example.json) | The same filter, run under OAuth client credentials | |
 | [`10-technology-search-shopify.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/10-technology-search-shopify.json) | `?STARTSWITH` on `technology_data.name` | |
 | [`11-track-modifications.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/11-track-modifications.json) | `?RANGE` over `modifications.*` for incremental sync | Contains `<NOW_MINUS_10_SECONDS_ISO8601>` — substitute both timestamps before sending |
+| [`12-count-companies-in-vainu-list.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/12-count-companies-in-vainu-list.json) | Counting every company in a saved list | Use with [`vainu organizations-count`](#vainu-organizations-count); `list` is a placeholder ID |
 
 Set up credentials once (see [Authentication](#authentication)), then run the smallest example:
 
@@ -726,6 +794,7 @@ vainu enrichment-agent \
 | `companies_async(payload, format)` | Submit async job → `AsyncResult` |
 | `organizations(payload, format)` | Fetch organization data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
 | `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
+| `organizations_count(payload, wait?, poll_interval?, max_wait_seconds?)` | Count matching organizations (`dict` of count metadata). Drops `order`, which the endpoint rejects. `wait=True` re-sends the payload until `status` leaves `scheduled`/`process` |
 | `organization_fields(api_versions?)` | Organization field catalog (`list`) |
 | `enrichment_agent(payload, format)` | Run an enrichment agent prompt on one company (`dict` for `json`) |
 | `signals_news(payload, format)` | Fetch news signals (`list` for `json`, raw `str` for `jsonl`) |
@@ -768,7 +837,7 @@ result.download_to_file(path)        # Download via streaming requests (sync)
 
 Search methods return parsed JSON only when `format="json"`. For `format="csv"` and
 `format="jsonl"`, they return the raw response text so the caller can write or stream it
-without JSON re-encoding. The signals methods return a `list` under `format="json"` — the
+without JSON re-encoding. `organizations_count` takes no `format` — the endpoint renders only its JSON metadata object — and always returns a `dict`. The signals methods return a `list` under `format="json"` — the
 Signals API responds with a bare array rather than a page object — and accept `json`/`jsonl`
 only.
 

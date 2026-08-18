@@ -57,6 +57,35 @@ ORGANIZATIONS_RESPONSE = {
     "next": None,
 }
 
+# The count endpoint answers with metadata only. A cold cache reports
+# status "scheduled" and no count yet; the caller re-POSTs until it goes "ready".
+ORGANIZATIONS_COUNT_RESPONSE = {
+    "count": 180086,
+    "time": "2026-04-16T15:21:16.445551",
+    "status": "ready",
+    "duration": 164.5,
+    "rate_of_change": None,
+    "eta_utc": None,
+}
+
+ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE = {
+    "count": None,
+    "time": "2026-04-16T15:21:16.445551",
+    "status": "scheduled",
+    "duration": None,
+    "rate_of_change": None,
+    "eta_utc": "2026-04-16T15:29:27.535137",
+}
+
+ORGANIZATIONS_COUNT_ERROR_RESPONSE = {
+    "count": None,
+    "time": "2026-04-16T15:21:16.445551",
+    "status": "error",
+    "duration": None,
+    "rate_of_change": None,
+    "eta_utc": None,
+}
+
 SIGNALS_NEWS_RESPONSE = [
     {
         "id": "65f0a1b2c3d4e5f6a7b8c9d0",

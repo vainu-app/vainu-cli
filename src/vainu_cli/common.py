@@ -101,3 +101,43 @@ class AsyncJobState(enum.StrEnum):
     PARTIAL_FAILURE_INCOMPLETE = "partial_failure_incomplete"
     PROCESS = "process"
     STOPPED = "stopped"
+
+
+# The count endpoint reports progress under its own `status` vocabulary —
+# error / process / ready / scheduled — which is unrelated to AsyncJobState above
+# (that one belongs to the /async/ job endpoints and is keyed on `state`).
+COUNT_PENDING_STATUSES: frozenset[str] = frozenset({"scheduled", "process"})
+
+
+def count_is_pending(response: object) -> bool:
+    """True when re-POSTing the same count payload could still change the answer.
+
+    Anything that is not an explicit pending status counts as final. Erring in
+    that direction matters: `_raise_for_status_with_body` hands 400/403/404 bodies
+    back to the caller instead of raising, and such a body carries no `status` key
+    at all — treating "unknown" as pending would spin until the timeout whenever
+    the payload is rejected.
+    """
+    return isinstance(response, dict) and response.get("status") in COUNT_PENDING_STATUSES
+
+
+# `order` is rejected outright by the count endpoint — 400 "invalid order by value",
+# for any value at all — even though /v3/organizations/ accepts it. Sorting is
+# meaningless when only a total comes back, so dropping it is what lets a payload
+# written for the search endpoint be counted unchanged.
+COUNT_UNSUPPORTED_KEYS: frozenset[str] = frozenset({"order"})
+
+
+def count_payload(payload: dict, first_request: bool = True) -> dict:
+    """Strip the keys the count endpoint cannot accept from a request body.
+
+    `fields`, `limit` and `offset` are left in place: the API documents them as
+    ignored for counts and accepts them without complaint, so there is nothing to
+    gain by rewriting them out.
+
+    `recount` forces a fresh count, so it may only ride on the first request —
+    re-sending it on every poll would restart the count each time and the status
+    would never leave "scheduled".
+    """
+    dropped = COUNT_UNSUPPORTED_KEYS if first_request else COUNT_UNSUPPORTED_KEYS | {"recount"}
+    return {key: value for key, value in payload.items() if key not in dropped}
