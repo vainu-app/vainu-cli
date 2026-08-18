@@ -1,6 +1,18 @@
 name: Publish to PyPI
 
+# Uploads happen via PyPI Trusted Publishing (OIDC) — no API tokens or secrets.
+# The publisher registered on PyPI for `vainu-cli` pins these claims:
+#
+#   owner / repository : vainu-app / vainu-cli
+#   workflow filename  : publish.yml   <- do NOT rename or move this file
+#   environment        : (blank, so any GitHub environment is accepted)
+#
+# Changing the filename or repo location breaks the exchange with an opaque
+# "invalid-publisher" error; update the publisher on PyPI first if you must.
+
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -10,7 +22,7 @@ on:
 
 jobs:
   publish:
-    name: Build & publish ${{ inputs.tag }}
+    name: Build & publish ${{ inputs.tag || github.event.release.tag_name }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -20,15 +32,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v5
 
       - name: Verify tag matches package version
+        env:
+          # Kept out of the script body: tag names are user-supplied text.
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
-          PKG_VERSION=$(uv run python -c "import vainu_cli; print(vainu_cli.__version__)")
-          TAG_VERSION="${{ inputs.tag }}"
-          TAG_VERSION="${TAG_VERSION#v}"  # strip leading 'v'
+          PKG_VERSION=$(uv run --frozen python -c "import vainu_cli; print(vainu_cli.__version__)")
+          TAG_VERSION="${TAG#v}"  # strip leading 'v'
           if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
             echo "ERROR: package version ($PKG_VERSION) does not match tag ($TAG_VERSION)"
             exit 1
@@ -36,5 +51,8 @@ jobs:
           echo "Version check passed: $PKG_VERSION"
 
       - run: uv build
+
+      - name: Check distribution metadata
+        run: uvx twine check dist/*
 
       - uses: pypa/gh-action-pypi-publish@release/v1
