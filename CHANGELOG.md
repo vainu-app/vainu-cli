@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vainu organizations-count` — count the organizations matching a query without returning any
+  rows, hitting `POST /v3/organizations/count/`. Takes `--payload` plus `--database`, `--list`,
+  `--recount` and `--max-cache-age` overrides. The endpoint computes counts in the background and
+  defaults to `async: true`, so the command re-sends the payload until `status` leaves
+  `scheduled`/`process` (tolerating a few transient network failures); `--no-wait` returns the
+  first reply with its `status` and `eta_utc` instead
+- `organizations_count(payload, wait, poll_interval, max_wait_seconds)` on the async and sync
+  clients, plus `count_is_pending()` and `count_payload()` in `vainu_cli.common`. `order` is
+  stripped from count requests — the endpoint returns `400 invalid order by value` for any
+  `order`, so dropping it lets an `organizations` payload be counted unchanged
 - `vainu update` / `vainu upgrade` — upgrade the CLI to the latest PyPI release
   (`uv tool upgrade`, with a `pip` fallback if uv is not installed)
 - `vainu fields organizations` — inspect organization field metadata from

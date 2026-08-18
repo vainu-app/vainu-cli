@@ -23,6 +23,9 @@ from conftest import (
     JWT_REFRESH_URL,
     JWT_TOKEN_RESPONSE,
     OAUTH_TOKEN_RESPONSE,
+    ORGANIZATIONS_COUNT_ERROR_RESPONSE,
+    ORGANIZATIONS_COUNT_RESPONSE,
+    ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE,
     ORGANIZATIONS_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
@@ -223,6 +226,162 @@ class TestVainuAPIKeyClientOrganizations:
         result = await client.companies(payload="?country=FI", format="jsonl")
         await client.close()
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeyClientOrganizationsCount:
+    COUNT_URL = f"{BASE_URL}/v3/organizations/count/?format=json"
+    QUERY = {"query": {"?GTE": {"financial_data.revenue": 1000000}}, "database": "NO"}
+
+    @respx.mock
+    async def test_returns_count_metadata(self):
+        route = respx.post(self.COUNT_URL).mock(
+            return_value=httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY)
+        await client.close()
+        assert result["count"] == 180086
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_no_wait_returns_scheduled_reply_as_is(self):
+        respx.post(self.COUNT_URL).mock(
+            return_value=httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=False)
+        await client.close()
+        assert result["status"] == "scheduled"
+        assert result["count"] is None
+
+    @respx.mock
+    async def test_wait_polls_until_status_ready(self):
+        route = respx.post(self.COUNT_URL).mock(
+            side_effect=[
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE),
+            ]
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert result["count"] == 180086
+        assert route.call_count == 3
+
+    @respx.mock
+    async def test_wait_stops_on_error_status(self):
+        route = respx.post(self.COUNT_URL).mock(
+            return_value=httpx.Response(200, json=ORGANIZATIONS_COUNT_ERROR_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert result["status"] == "error"
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_wait_treats_body_without_status_as_final(self):
+        route = respx.post(self.COUNT_URL).mock(
+            return_value=httpx.Response(400, json={"detail": "No database permission"})
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert result == {"detail": "No database permission"}
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_wait_times_out_while_still_scheduled(self):
+        respx.post(self.COUNT_URL).mock(
+            return_value=httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(TimeoutError, match="scheduled"):
+            await client.organizations_count(
+                payload=self.QUERY, wait=True, poll_interval=0, max_wait_seconds=0
+            )
+        await client.close()
+
+    @respx.mock
+    async def test_transient_transport_errors_are_retried(self):
+        respx.post(self.COUNT_URL).mock(
+            side_effect=[
+                httpx.ConnectError("boom"),
+                httpx.ReadError("truncated"),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE),
+                httpx.TimeoutException("slow"),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE),
+            ]
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert result["count"] == 180086
+
+    @respx.mock
+    async def test_raises_after_max_consecutive_failures(self):
+        route = respx.post(self.COUNT_URL).mock(side_effect=httpx.ConnectError)
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(httpx.ConnectError):
+            await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert route.call_count == VainuAPIKeyClient.ASYNC_POLL_MAX_RETRIES + 1
+
+    @respx.mock
+    async def test_success_resets_the_retry_budget(self):
+        """Failures scattered between successes must not add up to the cap."""
+        side_effect = []
+        for _ in range(VainuAPIKeyClient.ASYNC_POLL_MAX_RETRIES):
+            side_effect.append(httpx.ConnectError("boom"))
+            side_effect.append(httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE))
+        side_effect.append(httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE))
+        respx.post(self.COUNT_URL).mock(side_effect=side_effect)
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert result["count"] == 180086
+
+    @respx.mock
+    async def test_order_is_never_sent(self):
+        """A payload written for /organizations/ must be countable as-is."""
+        route = respx.post(self.COUNT_URL).mock(
+            side_effect=[
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE),
+            ]
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        await client.organizations_count(
+            payload={**self.QUERY, "order": "-financial_data.revenue", "limit": 50},
+            wait=True,
+            poll_interval=0,
+        )
+        await client.close()
+        for call in route.calls:
+            body = json.loads(call.request.content)
+            assert "order" not in body
+            assert body["limit"] == 50
+
+    @respx.mock
+    async def test_recount_is_dropped_from_follow_up_polls(self):
+        """Resending `recount` would restart the count and never converge."""
+        route = respx.post(self.COUNT_URL).mock(
+            side_effect=[
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE),
+            ]
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        payload = {**self.QUERY, "recount": True, "recount_if_cache_max_age": 3600}
+        await client.organizations_count(payload=payload, wait=True, poll_interval=0)
+        await client.close()
+        first, second = (json.loads(call.request.content) for call in route.calls)
+        assert first["recount"] is True
+        assert "recount" not in second
+        assert second["recount_if_cache_max_age"] == 3600
+        # The caller's dict must survive untouched.
+        assert payload["recount"] is True
 
 
 class TestVainuAPIKeyClientEnrichmentAgent:

@@ -20,6 +20,9 @@ from conftest import (
     JSONL_STREAM_RESPONSE,
     JWT_REFRESH_URL,
     ORGANIZATION_LISTS_RESPONSE,
+    ORGANIZATIONS_COUNT_ERROR_RESPONSE,
+    ORGANIZATIONS_COUNT_RESPONSE,
+    ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE,
     ORGANIZATIONS_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
@@ -583,6 +586,220 @@ class TestOrganizationsExport:
 
 
 # ── enrichment agent ──────────────────────────────────────────────────────────
+
+
+class TestOrganizationsCount:
+    COUNT_URL = f"{BASE_URL}/v3/organizations/count/?format=json"
+    PAYLOAD = '{"query": {"?EQ": {"business_id": "FI05381340"}}, "database": "FI"}'
+
+    @resp.activate
+    def test_prints_the_count_response(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", "-"],
+            input=self.PAYLOAD,
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.output)["count"] == 180086
+
+    @resp.activate
+    def test_counts_a_saved_list_without_a_payload(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--list", "68a1f2c9abcdef01"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["list"] == "68a1f2c9abcdef01"
+
+    @resp.activate
+    def test_accepts_inline_json(self, runner):
+        """Inherited from option_payload — pin it so the wiring cannot regress."""
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", self.PAYLOAD],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.output)["count"] == 180086
+
+    def test_rejects_a_json_list_payload(self, runner):
+        """load_payload can return a list now, which is not a valid count body."""
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", "[1, 2]"],
+        )
+        assert result.exit_code != 0
+        assert "JSON object" in result.output
+
+    def test_requires_a_list_or_query_and_database(self, runner):
+        result = runner.invoke(main, ["--api-key", "test-key", "organizations-count"])
+        assert result.exit_code != 0
+        assert "--list" in result.output
+
+    def test_query_without_database_is_rejected(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", "-"],
+            input='{"query": {"?EQ": {"business_id": "FI05381340"}}}',
+        )
+        assert result.exit_code != 0
+        assert "--database" in result.output
+
+    @resp.activate
+    def test_flags_override_payload_keys(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-count",
+                "--payload",
+                "-",
+                "--database",
+                "SE",
+                "--recount",
+                "--max-cache-age",
+                "3600",
+            ],
+            input=self.PAYLOAD,
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        body = json.loads(resp.calls[0].request.body)
+        assert body["database"] == "SE"
+        assert body["recount"] is True
+        assert body["recount_if_cache_max_age"] == 3600
+
+    @resp.activate
+    def test_reuses_a_search_payload_by_dropping_order(self, runner):
+        """`order` would 400, so an organizations payload counts unchanged."""
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", "-"],
+            input=(
+                '{"query": {"?EQ": {"business_id": "FI05381340"}}, "database": "FI", '
+                '"order": "-financial_data.revenue", "fields": ["name"], "limit": 50}'
+            ),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        body = json.loads(resp.calls[0].request.body)
+        assert "order" not in body
+        assert body["fields"] == ["name"]
+
+    @resp.activate
+    def test_no_wait_makes_a_single_request(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", "-", "--no-wait"],
+            input=self.PAYLOAD,
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert len(resp.calls) == 1
+        assert json.loads(result.output)["status"] == "scheduled"
+
+    @resp.activate
+    def test_wait_polls_until_ready(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-count",
+                "--payload",
+                "-",
+                "--poll-interval",
+                "0",
+            ],
+            input=self.PAYLOAD,
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert len(resp.calls) == 2
+        assert json.loads(result.output)["count"] == 180086
+
+    @resp.activate
+    def test_error_status_prints_the_body_and_exits_non_zero(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_ERROR_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-count", "--payload", "-"],
+            input=self.PAYLOAD,
+        )
+        assert result.exit_code != 0
+        # The body still reaches stdout so the status and time are visible.
+        assert '"status": "error"' in result.output
+
+    @resp.activate
+    def test_timeout_becomes_a_clean_error(self, runner):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-count",
+                "--payload",
+                "-",
+                "--poll-interval",
+                "0",
+                "--timeout",
+                "0",
+            ],
+            input=self.PAYLOAD,
+        )
+        assert result.exit_code != 0
+        assert "--no-wait" in result.output
+        assert "Traceback" not in result.output
+
+    @resp.activate
+    def test_writes_the_count_to_a_file(self, runner, tmp_path):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        out = tmp_path / "count.json"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-count",
+                "--payload",
+                "-",
+                "--output",
+                str(out),
+            ],
+            input=self.PAYLOAD,
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(out.read_text())["count"] == 180086
+
+    def test_async_mode_uses_the_async_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.organizations_count = AsyncMock(return_value=ORGANIZATIONS_COUNT_RESPONSE)
+            instance.close = AsyncMock()
+            result = runner.invoke(
+                main,
+                ["--api-key", "test-key", "--async-mode", "organizations-count", "--payload", "-"],
+                input=self.PAYLOAD,
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+        assert json.loads(result.output)["count"] == 180086
+        instance.organizations_count.assert_awaited_once_with(
+            payload=ANY, wait=True, poll_interval=3, max_wait_seconds=14400
+        )
 
 
 class TestEnrichmentAgent:

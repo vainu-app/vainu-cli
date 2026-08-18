@@ -20,6 +20,8 @@ from vainu_cli.common import (
     AsyncJobState,
     ResponseFormat,
     companies_request,
+    count_is_pending,
+    count_payload,
     ensure_streamable,
     lines_from_text,
     parse_response,
@@ -312,6 +314,66 @@ class VainuAPIBaseClient:
             payload=payload,
             format=format,
         )
+
+    def organizations_count(
+        self,
+        payload: dict,
+        wait: bool = False,
+        poll_interval: int | None = None,
+        max_wait_seconds: int | None = None,
+    ) -> dict:
+        """Count the organizations matching a query, without returning any rows.
+
+        The endpoint ignores `fields`, `limit` and `offset` and answers with count
+        metadata only. `order` is dropped before sending — the count endpoint 400s on
+        it — so a payload written for `organizations` can be counted unchanged. It
+        also defaults to `async: true`, so a cold cache replies
+        `{"count": null, "status": "scheduled"}`. With `wait=True` the same payload
+        is re-POSTed every `poll_interval` seconds until `status` goes terminal —
+        re-sending the payload is the documented way to collect the finished count.
+        """
+        poll_interval = self.ASYNC_POLL_INTERVAL if poll_interval is None else poll_interval
+        first_request = True
+        started_at = time.monotonic()
+        consecutive_errors = 0
+        while True:
+            try:
+                response = self.request(
+                    method=http.HTTPMethod.POST,
+                    path="/v3/organizations/count/?format=json",
+                    json=count_payload(payload, first_request=first_request),
+                ).json()
+                first_request = False
+                consecutive_errors = 0
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as exc:
+                consecutive_errors += 1
+                if consecutive_errors > self.ASYNC_POLL_MAX_RETRIES:
+                    raise
+                logger.warning(
+                    "Count request failed (%s/%s): %s — retrying in %ss",
+                    consecutive_errors,
+                    self.ASYNC_POLL_MAX_RETRIES,
+                    exc,
+                    poll_interval,
+                )
+                time.sleep(poll_interval)
+                continue
+            if not wait or not count_is_pending(response):
+                return response
+            if max_wait_seconds is not None and time.monotonic() - started_at > max_wait_seconds:
+                raise TimeoutError(
+                    f"Count polling exceeded {max_wait_seconds}s "
+                    f"(last status {response.get('status')!r})"
+                )
+            logger.debug(
+                "Count status: %s — polling again in %ss",
+                response.get("status"),
+                poll_interval,
+            )
+            time.sleep(poll_interval)
 
     def signals_news(
         self,

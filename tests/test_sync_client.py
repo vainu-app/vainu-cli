@@ -25,6 +25,9 @@ from conftest import (
     OAUTH_TOKEN_RESPONSE,
     ORGANIZATION_FIELDS_RESPONSE,
     ORGANIZATION_LISTS_RESPONSE,
+    ORGANIZATIONS_COUNT_ERROR_RESPONSE,
+    ORGANIZATIONS_COUNT_RESPONSE,
+    ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE,
     ORGANIZATIONS_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
@@ -214,6 +217,146 @@ class TestVainuAPIKeySyncClientOrganizations:
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.companies(payload="?country=FI", format="jsonl")
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeySyncClientOrganizationsCount:
+    COUNT_URL = f"{BASE_URL}/v3/organizations/count/?format=json"
+    QUERY = {"query": {"?GTE": {"financial_data.revenue": 1000000}}, "database": "NO"}
+
+    @resp.activate
+    def test_returns_count_metadata(self):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY)
+        assert result["count"] == 180086
+        assert result["status"] == "ready"
+        assert len(resp.calls) == 1
+
+    @resp.activate
+    def test_no_wait_returns_scheduled_reply_as_is(self):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=False)
+        assert result["count"] is None
+        assert result["status"] == "scheduled"
+        assert len(resp.calls) == 1
+
+    @resp.activate
+    def test_wait_polls_until_status_ready(self):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result["count"] == 180086
+        assert len(resp.calls) == 3
+
+    @resp.activate
+    def test_wait_stops_on_error_status(self):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_ERROR_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result["status"] == "error"
+        assert len(resp.calls) == 1
+
+    @resp.activate
+    def test_wait_treats_body_without_status_as_final(self):
+        """A rejected payload comes back as a 400 body, which carries no `status`."""
+        resp.add(resp.POST, self.COUNT_URL, json={"detail": "No database permission"}, status=400)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result == {"detail": "No database permission"}
+        assert len(resp.calls) == 1
+
+    @resp.activate
+    def test_wait_times_out_while_still_scheduled(self):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(TimeoutError, match="scheduled"):
+            client.organizations_count(
+                payload=self.QUERY, wait=True, poll_interval=0, max_wait_seconds=0
+            )
+
+    @resp.activate
+    def test_transient_connection_error_is_retried(self):
+        resp.add(resp.POST, self.COUNT_URL, body=requests.exceptions.ConnectionError("boom"))
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result["count"] == 180086
+
+    @resp.activate
+    def test_transient_timeout_is_retried(self):
+        resp.add(resp.POST, self.COUNT_URL, body=requests.exceptions.Timeout("slow"))
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result["count"] == 180086
+
+    @resp.activate
+    def test_raises_after_max_consecutive_failures(self):
+        # responses repeats the last registered response, so every attempt fails.
+        resp.add(resp.POST, self.COUNT_URL, body=requests.exceptions.ConnectionError("boom"))
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(requests.exceptions.ConnectionError):
+            client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert len(resp.calls) == VainuAPIKeySyncClient.ASYNC_POLL_MAX_RETRIES + 1
+
+    @resp.activate
+    def test_success_resets_the_retry_budget(self):
+        """Failures scattered between successes must not add up to the cap."""
+        failure = requests.exceptions.ConnectionError("boom")
+        for _ in range(VainuAPIKeySyncClient.ASYNC_POLL_MAX_RETRIES):
+            resp.add(resp.POST, self.COUNT_URL, body=failure)
+            resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result["count"] == 180086
+
+    @resp.activate
+    def test_recount_is_dropped_from_follow_up_polls(self):
+        """Resending `recount` would restart the count and never converge."""
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.organizations_count(
+            payload={**self.QUERY, "recount": True, "recount_if_cache_max_age": 3600},
+            wait=True,
+            poll_interval=0,
+        )
+        first, second = (json.loads(call.request.body) for call in resp.calls)
+        assert first["recount"] is True
+        assert "recount" not in second
+        # The cache threshold is harmless once a count lands, so it keeps riding along.
+        assert second["recount_if_cache_max_age"] == 3600
+        assert second["query"] == self.QUERY["query"]
+
+    @resp.activate
+    def test_order_is_never_sent(self):
+        """A payload written for /organizations/ must be countable as-is."""
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.organizations_count(
+            payload={**self.QUERY, "order": "-financial_data.revenue", "limit": 50},
+            wait=True,
+            poll_interval=0,
+        )
+        for call in resp.calls:
+            body = json.loads(call.request.body)
+            assert "order" not in body
+            # Keys the API merely ignores are left untouched.
+            assert body["limit"] == 50
+
+    @resp.activate
+    def test_caller_payload_is_not_mutated(self):
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        payload = {**self.QUERY, "recount": True}
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.organizations_count(payload=payload, wait=True, poll_interval=0)
+        assert payload["recount"] is True
 
 
 class TestVainuAPIKeySyncClientEnrichmentAgent:
