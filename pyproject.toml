@@ -59,14 +59,9 @@ Changelog = "https://github.com/vainu-app/vainu-cli/blob/main/CHANGELOG.md"
 [tool.hatch.version]
 path = "src/vainu_cli/_version.py"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/vainu_cli"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"example_payloads" = "vainu_cli/example_payloads"
-
-[tool.hatch.build.targets.sdist]
-include = ["example_payloads/**"]
+[tool.hatch.build]
+src-layout = true
+package-data = {"vainu_cli" = ["_data/**/*.json"]}
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
