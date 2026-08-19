@@ -9,7 +9,7 @@ _PKG_DIR = Path(__file__).resolve().parent
 
 def examples_dir() -> Path:
     """Return the directory containing bundled example payload JSON files."""
-    bundled = _PKG_DIR / "example_payloads"
+    bundled = _PKG_DIR / "_data" / "example_payloads"
     if bundled.is_dir():
         return bundled
     checkout = _PKG_DIR.parent.parent / "example_payloads"
