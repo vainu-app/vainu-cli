@@ -18,7 +18,6 @@ usage() {
   echo "  Cursor:      ~/.cursor/skills/${SKILL_NAME}/"
   echo "  Claude Code: ~/.claude/skills/${SKILL_NAME}/"
   echo "  Codex:       ~/.agents/skills/${SKILL_NAME}/"
-  exit 0
 }
 
 for arg in "$@"; do
@@ -37,10 +36,12 @@ for arg in "$@"; do
       ;;
     -h | --help)
       usage
+      exit 0
       ;;
     *)
       echo "Unknown option: $arg" >&2
-      usage
+      usage >&2
+      exit 1
       ;;
   esac
 done
