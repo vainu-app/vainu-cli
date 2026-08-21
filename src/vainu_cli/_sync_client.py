@@ -12,6 +12,7 @@ import requests
 
 from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
+    DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
     DEFAULT_STREAM_FORMAT,
@@ -116,7 +117,7 @@ def _is_retryable_poll_error(exc: Exception) -> bool:
 
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
-    ASYNC_MAX_WAIT_SECONDS = 14400  # 4 hours
+    ASYNC_MAX_WAIT_SECONDS = DEFAULT_ASYNC_MAX_WAIT_SECONDS
     ASYNC_POLL_MAX_RETRIES = 5
 
     def __init__(

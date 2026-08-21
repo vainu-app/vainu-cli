@@ -195,6 +195,31 @@ class TestVainuAPIKeyClientCompaniesAsync:
         await client.close()
 
     @respx.mock
+    async def test_raises_when_polling_outlives_the_max_wait(self, monkeypatch):
+        """A job that never leaves `process` has to give up eventually."""
+        respx.get(f"{BASE_URL}/v2/companies/async/").mock(
+            return_value=httpx.Response(200, json=ASYNC_JOB_SUBMIT_RESPONSE)
+        )
+        respx.get(f"{BASE_URL}/v2/companies/async/job123/").mock(
+            return_value=httpx.Response(200, json=ASYNC_JOB_PROCESS)
+        )
+        # Make the monotonic clock jump past the cap on every reading.
+        ticks = iter(range(0, 1_000_000, 100_000))
+        monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+
+        client = VainuAPIKeyClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        client._async_max_wait_seconds = 1
+        with pytest.raises(TimeoutError, match="exceeded"):
+            await client.companies_async(payload="?country=FI")
+        await client.close()
+
+    async def test_max_wait_defaults_to_the_class_attribute(self):
+        client = VainuAPIKeyClient(api_key="test-key")
+        assert client._async_max_wait_seconds == VainuAPIKeyClient.ASYNC_MAX_WAIT_SECONDS
+        await client.close()
+
+    @respx.mock
     async def test_gateway_timeout_while_polling_is_retried(self):
         """A 504 from the load balancer says nothing about the job behind it."""
         respx.get(f"{BASE_URL}/v2/companies/async/").mock(
