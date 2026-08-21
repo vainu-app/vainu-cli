@@ -194,6 +194,62 @@ class TestVainuAPIKeyClientCompaniesAsync:
             await client.companies_async(payload="?country=FI")
         await client.close()
 
+    @respx.mock
+    async def test_gateway_timeout_while_polling_is_retried(self):
+        """A 504 from the load balancer says nothing about the job behind it."""
+        respx.get(f"{BASE_URL}/v2/companies/async/").mock(
+            return_value=httpx.Response(200, json=ASYNC_JOB_SUBMIT_RESPONSE)
+        )
+        poll_url = f"{BASE_URL}/v2/companies/async/job123/"
+        respx.get(poll_url).mock(
+            side_effect=[
+                httpx.Response(504, text="<html>504 Gateway Time-out</html>"),
+                httpx.Response(502, text="bad gateway"),
+                httpx.Response(200, json=ASYNC_JOB_PROCESS),
+                httpx.Response(503, text="unavailable"),
+                httpx.Response(200, json=ASYNC_JOB_COMPLETED),
+            ]
+        )
+
+        client = VainuAPIKeyClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        result = await client.companies_async(payload="?country=FI")
+        await client.close()
+
+        assert result.download_url == "https://downloads.vainu.io/result.json"
+
+    @respx.mock
+    async def test_repeated_gateway_timeouts_still_raise(self):
+        respx.get(f"{BASE_URL}/v2/companies/async/").mock(
+            return_value=httpx.Response(200, json=ASYNC_JOB_SUBMIT_RESPONSE)
+        )
+        poll_url = f"{BASE_URL}/v2/companies/async/job123/"
+        route = respx.get(poll_url).mock(return_value=httpx.Response(504, text="nope"))
+
+        client = VainuAPIKeyClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.companies_async(payload="?country=FI")
+        await client.close()
+
+        assert route.call_count == VainuAPIKeyClient.ASYNC_POLL_MAX_RETRIES + 1
+
+    @respx.mock
+    async def test_non_transient_poll_status_is_not_retried(self):
+        respx.get(f"{BASE_URL}/v2/companies/async/").mock(
+            return_value=httpx.Response(200, json=ASYNC_JOB_SUBMIT_RESPONSE)
+        )
+        poll_url = f"{BASE_URL}/v2/companies/async/job123/"
+        route = respx.get(poll_url).mock(return_value=httpx.Response(405, text="nope"))
+
+        client = VainuAPIKeyClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.companies_async(payload="?country=FI")
+        await client.close()
+
+        assert route.call_count == 1
+
 
 class TestVainuAPIKeyClientOrganizations:
     @respx.mock
@@ -318,6 +374,30 @@ class TestVainuAPIKeyClientOrganizationsCount:
         result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
         await client.close()
         assert result["count"] == 180086
+
+    @respx.mock
+    async def test_transient_server_errors_are_retried(self):
+        respx.post(self.COUNT_URL).mock(
+            side_effect=[
+                httpx.Response(504, text="gateway timeout"),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE),
+                httpx.Response(429, text="slow down"),
+                httpx.Response(200, json=ORGANIZATIONS_COUNT_RESPONSE),
+            ]
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert result["count"] == 180086
+
+    @respx.mock
+    async def test_non_transient_count_status_is_not_retried(self):
+        route = respx.post(self.COUNT_URL).mock(return_value=httpx.Response(405, text="nope"))
+        client = VainuAPIKeyClient(api_key="test-key")
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        await client.close()
+        assert route.call_count == 1
 
     @respx.mock
     async def test_raises_after_max_consecutive_failures(self):
