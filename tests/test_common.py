@@ -2,7 +2,13 @@
 
 import pytest
 
-from vainu_cli.common import COUNT_PENDING_STATUSES, count_is_pending, count_payload
+from vainu_cli.common import (
+    COUNT_PENDING_STATUSES,
+    POLL_RETRY_MAX_BACKOFF_SECONDS,
+    count_is_pending,
+    count_payload,
+    poll_retry_delay,
+)
 
 
 class TestCountIsPending:
@@ -72,3 +78,18 @@ class TestCountPayload:
     def test_payload_without_stripped_keys_is_unchanged(self):
         payload = {"list": "abc", "async": False}
         assert count_payload(payload) == payload
+
+
+class TestPollRetryDelay:
+    def test_first_retry_waits_one_poll_interval(self):
+        assert poll_retry_delay(3, 1) == 3
+
+    def test_delay_doubles_per_consecutive_failure(self):
+        assert [poll_retry_delay(3, n) for n in range(1, 5)] == [3, 6, 12, 24]
+
+    def test_delay_is_capped(self):
+        assert poll_retry_delay(3, 20) == POLL_RETRY_MAX_BACKOFF_SECONDS
+
+    def test_zero_interval_never_sleeps(self):
+        """Tests drive the poll loops with interval 0 — backoff must stay 0."""
+        assert poll_retry_delay(0, 4) == 0
