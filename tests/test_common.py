@@ -4,6 +4,7 @@ import pytest
 
 from vainu_cli.common import (
     COUNT_PENDING_STATUSES,
+    DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     POLL_RETRY_MAX_BACKOFF_SECONDS,
     count_is_pending,
     count_payload,
@@ -93,3 +94,13 @@ class TestPollRetryDelay:
     def test_zero_interval_never_sleeps(self):
         """Tests drive the poll loops with interval 0 — backoff must stay 0."""
         assert poll_retry_delay(0, 4) == 0
+
+
+class TestAsyncMaxWait:
+    def test_both_clients_share_the_same_cap(self):
+        """The two clients used to drift — 4 hours sync, unbounded async."""
+        from vainu_cli._async_client import VainuAPIBaseClient as AsyncBase
+        from vainu_cli._sync_client import VainuAPIBaseClient as SyncBase
+
+        assert AsyncBase.ASYNC_MAX_WAIT_SECONDS == DEFAULT_ASYNC_MAX_WAIT_SECONDS
+        assert SyncBase.ASYNC_MAX_WAIT_SECONDS == DEFAULT_ASYNC_MAX_WAIT_SECONDS

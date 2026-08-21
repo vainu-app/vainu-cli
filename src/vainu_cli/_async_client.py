@@ -13,6 +13,7 @@ import httpx
 
 from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
+    DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
     DEFAULT_STREAM_FORMAT,
@@ -129,6 +130,7 @@ def _is_retryable_poll_error(exc: Exception) -> bool:
 
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
+    ASYNC_MAX_WAIT_SECONDS = DEFAULT_ASYNC_MAX_WAIT_SECONDS
     ASYNC_POLL_MAX_RETRIES = 5
 
     def __init__(
@@ -140,6 +142,7 @@ class VainuAPIBaseClient:
         self._base_url = base_url
         self._language = language
         self._http = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+        self._async_max_wait_seconds = self.ASYNC_MAX_WAIT_SECONDS
 
     async def request(self, method: http.HTTPMethod, path: str, **kwargs) -> httpx.Response:
         """Make an authenticated request."""
@@ -226,8 +229,14 @@ class VainuAPIBaseClient:
             json=payload if isinstance(payload, dict) else None,
         )
         link_to_poll = get_async_job.json().get("link")
+        started_at = time.monotonic()
         consecutive_errors = 0
         while True:
+            if time.monotonic() - started_at > self._async_max_wait_seconds:
+                raise TimeoutError(
+                    f"Async job polling exceeded {self._async_max_wait_seconds}s "
+                    f"for link {link_to_poll}"
+                )
             try:
                 poll_response = await self.request(method=http.HTTPMethod.GET, path=link_to_poll)
                 consecutive_errors = 0

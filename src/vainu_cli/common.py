@@ -23,6 +23,10 @@ DEFAULT_STREAM_FORMAT: ResponseFormat = "jsonl"
 # searches stream their body for well over a minute, so keep this above the
 # API's own 120s ceiling rather than racing it.
 DEFAULT_TIMEOUT_SECONDS = 121
+# How long a poll loop keeps asking after an async job before giving up. A large
+# export can legitimately run for hours; a job wedged in `process` must not keep
+# a CLI run alive forever.
+DEFAULT_ASYNC_MAX_WAIT_SECONDS = 21600  # 6 hours
 # Statuses that say "ask again later", not "your request was wrong". A long
 # export routinely draws a 504 from the load balancer in front of the API while
 # the job itself keeps running, so a poll loop has to survive them.
