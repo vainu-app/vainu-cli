@@ -23,6 +23,34 @@ DEFAULT_STREAM_FORMAT: ResponseFormat = "jsonl"
 # searches stream their body for well over a minute, so keep this above the
 # API's own 120s ceiling rather than racing it.
 DEFAULT_TIMEOUT_SECONDS = 121
+# How long a poll loop keeps asking after an async job before giving up. A large
+# export can legitimately run for hours; a job wedged in `process` must not keep
+# a CLI run alive forever.
+DEFAULT_ASYNC_MAX_WAIT_SECONDS = 21600  # 6 hours
+# Statuses that say "ask again later", not "your request was wrong". A long
+# export routinely draws a 504 from the load balancer in front of the API while
+# the job itself keeps running, so a poll loop has to survive them.
+RETRYABLE_STATUS_CODES = frozenset(
+    {
+        http.HTTPStatus.REQUEST_TIMEOUT,
+        http.HTTPStatus.TOO_MANY_REQUESTS,
+        http.HTTPStatus.INTERNAL_SERVER_ERROR,
+        http.HTTPStatus.BAD_GATEWAY,
+        http.HTTPStatus.SERVICE_UNAVAILABLE,
+        http.HTTPStatus.GATEWAY_TIMEOUT,
+    }
+)
+# Consecutive poll failures back off exponentially from the poll interval, so a
+# gateway that is unhappy for a minute does not burn the retry budget in
+# seconds. Capped so a long job keeps checking in at a sane rate.
+POLL_RETRY_MAX_BACKOFF_SECONDS = 60
+
+
+def poll_retry_delay(poll_interval: float, consecutive_errors: int) -> float:
+    """Seconds to wait before poll retry number `consecutive_errors` (1-based)."""
+    delay = poll_interval * 2 ** (consecutive_errors - 1)
+    return min(delay, POLL_RETRY_MAX_BACKOFF_SECONDS)
+
 
 # OAuth / login
 OAUTH_AUTHORIZE_ENDPOINT = "/oauth/authorize/"

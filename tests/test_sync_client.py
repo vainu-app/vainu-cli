@@ -169,6 +169,52 @@ class TestVainuAPIKeySyncClientCompaniesAsync:
         with pytest.raises(RuntimeError, match="failure"):
             client.companies_async(payload="?country=FI")
 
+    @resp.activate
+    def test_gateway_timeout_while_polling_is_retried(self):
+        """A 504 from the load balancer says nothing about the job behind it."""
+        poll_url = f"{BASE_URL}/v2/companies/async/job123/"
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/async/", json=ASYNC_JOB_SUBMIT_RESPONSE)
+        resp.add(resp.GET, poll_url, status=504, body="<html>504 Gateway Time-out</html>")
+        resp.add(resp.GET, poll_url, status=502, body="bad gateway")
+        resp.add(resp.GET, poll_url, json=ASYNC_JOB_PROCESS)
+        resp.add(resp.GET, poll_url, status=503, body="unavailable")
+        resp.add(resp.GET, poll_url, json=ASYNC_JOB_COMPLETED)
+
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        result = client.companies_async(payload="?country=FI")
+
+        assert result.download_url == "https://downloads.vainu.io/result.json"
+
+    @resp.activate
+    def test_repeated_gateway_timeouts_still_raise(self):
+        poll_url = f"{BASE_URL}/v2/companies/async/job123/"
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/async/", json=ASYNC_JOB_SUBMIT_RESPONSE)
+        # responses repeats the last registered response, so every poll 504s.
+        resp.add(resp.GET, poll_url, status=504, body="nope")
+
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        with pytest.raises(requests.exceptions.HTTPError):
+            client.companies_async(payload="?country=FI")
+
+        polls = [call for call in resp.calls if call.request.url == poll_url]
+        assert len(polls) == VainuAPIKeySyncClient.ASYNC_POLL_MAX_RETRIES + 1
+
+    @resp.activate
+    def test_non_transient_poll_status_is_not_retried(self):
+        poll_url = f"{BASE_URL}/v2/companies/async/job123/"
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/async/", json=ASYNC_JOB_SUBMIT_RESPONSE)
+        resp.add(resp.GET, poll_url, status=405, body="nope")
+
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        with pytest.raises(requests.exceptions.HTTPError):
+            client.companies_async(payload="?country=FI")
+
+        polls = [call for call in resp.calls if call.request.url == poll_url]
+        assert len(polls) == 1
+
     def test_raises_on_timeout(self, monkeypatch):
         # Make monotonic clock advance past the timeout on every call
         call_count = {"n": 0}
@@ -293,6 +339,24 @@ class TestVainuAPIKeySyncClientOrganizationsCount:
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
         assert result["count"] == 180086
+
+    @resp.activate
+    def test_transient_server_errors_are_retried(self):
+        resp.add(resp.POST, self.COUNT_URL, status=504, body="gateway timeout")
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE)
+        resp.add(resp.POST, self.COUNT_URL, status=429, body="slow down")
+        resp.add(resp.POST, self.COUNT_URL, json=ORGANIZATIONS_COUNT_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert result["count"] == 180086
+
+    @resp.activate
+    def test_non_transient_count_status_is_not_retried(self):
+        resp.add(resp.POST, self.COUNT_URL, status=405, body="nope")
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(requests.exceptions.HTTPError):
+            client.organizations_count(payload=self.QUERY, wait=True, poll_interval=0)
+        assert len(resp.calls) == 1
 
     @resp.activate
     def test_raises_after_max_consecutive_failures(self):

@@ -12,11 +12,13 @@ import requests
 
 from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
+    DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     DEFAULT_BASE_URL,
     DEFAULT_RESPONSE_FORMAT,
     DEFAULT_STREAM_FORMAT,
     DEFAULT_TIMEOUT_SECONDS,
     JWT_REFRESH_ENDPOINT_PATH,
+    RETRYABLE_STATUS_CODES,
     AsyncJobState,
     ResponseFormat,
     companies_request,
@@ -25,6 +27,7 @@ from vainu_cli.common import (
     ensure_streamable,
     lines_from_text,
     parse_response,
+    poll_retry_delay,
 )
 
 logger = logging.getLogger(__name__)
@@ -96,9 +99,25 @@ def _raise_for_status_with_body(response: requests.Response) -> requests.Respons
     return response
 
 
+# Failures a poll loop should sit out rather than surface. Transport errors
+# always qualify; an HTTP status only when it is one of RETRYABLE_STATUS_CODES.
+POLL_RETRY_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.HTTPError,
+)
+
+
+def _is_retryable_poll_error(exc: Exception) -> bool:
+    if isinstance(exc, requests.exceptions.HTTPError):
+        response = exc.response
+        return response is not None and response.status_code in RETRYABLE_STATUS_CODES
+    return True
+
+
 class VainuAPIBaseClient:
     ASYNC_POLL_INTERVAL = 3  # seconds
-    ASYNC_MAX_WAIT_SECONDS = 14400  # 4 hours
+    ASYNC_MAX_WAIT_SECONDS = DEFAULT_ASYNC_MAX_WAIT_SECONDS
     ASYNC_POLL_MAX_RETRIES = 5
 
     def __init__(
@@ -197,21 +216,21 @@ class VainuAPIBaseClient:
             try:
                 poll_response = self.request(method=http.HTTPMethod.GET, path=link_to_poll)
                 consecutive_errors = 0
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-            ) as exc:
+            except POLL_RETRY_ERRORS as exc:
+                if not _is_retryable_poll_error(exc):
+                    raise
                 consecutive_errors += 1
                 if consecutive_errors > self.ASYNC_POLL_MAX_RETRIES:
                     raise
+                retry_in = poll_retry_delay(self.ASYNC_POLL_INTERVAL, consecutive_errors)
                 logger.warning(
                     "Poll request failed (%s/%s): %s — retrying in %ss",
                     consecutive_errors,
                     self.ASYNC_POLL_MAX_RETRIES,
                     exc,
-                    self.ASYNC_POLL_INTERVAL,
+                    retry_in,
                 )
-                time.sleep(self.ASYNC_POLL_INTERVAL)
+                time.sleep(retry_in)
                 continue
             poll_data = poll_response.json()
             status = AsyncJobState(poll_data.get("state"))
@@ -345,21 +364,21 @@ class VainuAPIBaseClient:
                 ).json()
                 first_request = False
                 consecutive_errors = 0
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-            ) as exc:
+            except POLL_RETRY_ERRORS as exc:
+                if not _is_retryable_poll_error(exc):
+                    raise
                 consecutive_errors += 1
                 if consecutive_errors > self.ASYNC_POLL_MAX_RETRIES:
                     raise
+                retry_in = poll_retry_delay(poll_interval, consecutive_errors)
                 logger.warning(
                     "Count request failed (%s/%s): %s — retrying in %ss",
                     consecutive_errors,
                     self.ASYNC_POLL_MAX_RETRIES,
                     exc,
-                    poll_interval,
+                    retry_in,
                 )
-                time.sleep(poll_interval)
+                time.sleep(retry_in)
                 continue
             if not wait or not count_is_pending(response):
                 return response
