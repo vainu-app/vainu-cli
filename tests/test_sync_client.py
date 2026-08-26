@@ -29,6 +29,7 @@ from conftest import (
     ORGANIZATIONS_COUNT_RESPONSE,
     ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    ORGANIZATIONS_SEARCH_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
@@ -263,6 +264,46 @@ class TestVainuAPIKeySyncClientOrganizations:
         client = VainuAPIKeySyncClient(api_key="test-key")
         result = client.companies(payload="?country=FI", format="jsonl")
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeySyncClientOrganizationsSearch:
+    SEARCH_URL = f"{BASE_URL}/v3/organizations/search/?format=json"
+    PAYLOAD = {"search": "volvo", "database": "SE", "fields": ["business_id", "name"]}
+
+    @resp.activate
+    def test_returns_bare_array(self):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_search(payload=self.PAYLOAD)
+        assert isinstance(result, list)
+        assert result[0]["business_id"] == "SE5560125790"
+        assert json.loads(resp.calls[0].request.body) == self.PAYLOAD
+
+    @resp.activate
+    def test_uses_explicit_format(self):
+        resp.add(
+            resp.POST, f"{BASE_URL}/v3/organizations/search/?format=jsonl", body=JSONL_RESPONSE
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        result = client.organizations_search(payload=self.PAYLOAD, format="jsonl")
+        assert result == JSONL_RESPONSE
+
+    @resp.activate
+    def test_stream_yields_lines(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/search/?format=jsonl",
+            body=JSONL_STREAM_RESPONSE,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_organizations_search(payload=self.PAYLOAD, format="jsonl") as lines:
+            assert list(lines) == JSONL_STREAM_LINES
+
+    def test_stream_rejects_json(self):
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with pytest.raises(ValueError, match="cannot be streamed"):
+            with client.stream_organizations_search(payload=self.PAYLOAD, format="json"):
+                pass
 
 
 class TestVainuAPIKeySyncClientOrganizationsCount:

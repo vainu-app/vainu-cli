@@ -12,6 +12,7 @@ CLI and Python client for the [Vainu](https://vainu.com) API.
 | Task | Approach |
 |------|----------|
 | Company / organization search | `vainu organizations --payload ...` |
+| Look a company up by name / domain | `vainu organizations-search --search ...` |
 | Find filterable / output field paths | `vainu fields organizations` |
 | Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |
@@ -66,6 +67,7 @@ Optional: `VAINU_BASE_URL` to override the API host.
 | `vainu companies` | v2 GET/POST | `--query "?country=FI&..."` or `--payload` |
 | `vainu companies-async` | v2 async export | `--payload` + required `--output` |
 | `vainu organizations` | v3 POST | `--payload` JSON with `database` + `query` |
+| `vainu organizations-search` | v3 fuzzy search | `--search TERM` — name/business id/domain → rows |
 | `vainu organizations-async` | v3 async export | `--payload` + required `--output` |
 | `vainu organizations-count` | v3 count | `--payload` / `--list` — count only, no rows |
 | `vainu fields organizations` | v3 GET metadata | filterable vs output field catalog |

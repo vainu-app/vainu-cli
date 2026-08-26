@@ -24,6 +24,7 @@ from conftest import (
     ORGANIZATIONS_COUNT_RESPONSE,
     ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    ORGANIZATIONS_SEARCH_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
@@ -585,7 +586,305 @@ class TestOrganizationsExport:
         assert "Result exists in result_url:" in result.output
 
 
-# ── enrichment agent ──────────────────────────────────────────────────────────
+# ── organizations fuzzy search ────────────────────────────────────────────────
+
+
+class TestOrganizationsFuzzySearch:
+    SEARCH_URL = f"{BASE_URL}/v3/organizations/search/?format=json"
+
+    @resp.activate
+    def test_flags_build_the_payload(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--search",
+                "volvo",
+                "--database",
+                "SE",
+                "--fields",
+                "business_id,name",
+                "--limit",
+                "5",
+                "--offset",
+                "2",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body) == {
+            "search": "volvo",
+            "database": "SE",
+            "fields": ["business_id", "name"],
+            "limit": 5,
+            "offset": 2,
+        }
+        assert json.loads(result.output)[0]["business_id"] == "SE5560125790"
+
+    @resp.activate
+    def test_defaults_fields_when_none_given(self, runner):
+        """With no `fields` at all the API answers with empty objects."""
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-search", "--search", "volvo"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["fields"] == [
+            "business_id",
+            "name",
+            "website",
+        ]
+
+    @resp.activate
+    def test_repeated_database_is_sent_as_a_list(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--search",
+                "volvo",
+                "--database",
+                "SE",
+                "--database",
+                "FI",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["database"] == ["SE", "FI"]
+
+    @resp.activate
+    def test_comma_separated_database_is_split(self, runner):
+        """A comma-joined string is rejected by the API, so it is split into a list."""
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--search",
+                "volvo",
+                "--database",
+                "SE,FI",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["database"] == ["SE", "FI"]
+
+    @resp.activate
+    def test_payload_database_list_is_sent_as_is(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--payload",
+                '{"search": "volvo", "database": ["SE", "FI"]}',
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["database"] == ["SE", "FI"]
+
+    @resp.activate
+    def test_payload_database_commas_are_split(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--payload",
+                '{"search": "volvo", "database": "SE,FI"}',
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["database"] == ["SE", "FI"]
+
+    @resp.activate
+    def test_payload_single_database_stays_a_string(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--payload",
+                '{"search": "volvo", "database": "SE"}',
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["database"] == "SE"
+
+    @resp.activate
+    def test_repeated_fields_flag_accumulates(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--search",
+                "volvo",
+                "--fields",
+                "business_id",
+                "--fields",
+                "name",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["fields"] == ["business_id", "name"]
+
+    @resp.activate
+    def test_include_inactive_sets_is_active_false(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--search",
+                "volvo",
+                "--include-inactive",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["is_active"] is False
+
+    @resp.activate
+    def test_omits_is_active_by_default(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-search", "--search", "volvo"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "is_active" not in json.loads(resp.calls[0].request.body)
+
+    @resp.activate
+    def test_flags_override_payload(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--payload",
+                '{"search": "volvo", "database": "FI"}',
+                "--database",
+                "SE",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        body = json.loads(resp.calls[0].request.body)
+        assert body["search"] == "volvo"
+        assert body["database"] == "SE"
+
+    def test_requires_a_search_term(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-search", "--database", "SE"],
+        )
+        assert result.exit_code != 0
+        assert "needs a search term" in result.output
+
+    def test_rejects_non_object_payload(self, runner):
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations-search", "--payload", '["volvo"]'],
+        )
+        assert result.exit_code != 0
+        assert "must contain a JSON object" in result.output
+
+    @resp.activate
+    def test_warns_that_skip_is_ignored(self, runner):
+        resp.add(resp.POST, self.SEARCH_URL, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--payload",
+                '{"search": "volvo", "skip": 3}',
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "ignores 'skip'" in result.output
+
+    @resp.activate
+    def test_jsonl_streams_to_file(self, runner, tmp_path):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/search/?format=jsonl",
+            body=JSONL_RESPONSE,
+        )
+        output_file = tmp_path / "hits.jsonl"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations-search",
+                "--search",
+                "volvo",
+                "--format",
+                "jsonl",
+                "--output",
+                str(output_file),
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text() == f"{JSONL_RESPONSE}\n"
+
+    def test_async_mode_uses_the_async_client(self, runner):
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.organizations_search = AsyncMock(return_value=ORGANIZATIONS_SEARCH_RESPONSE)
+            instance.close = AsyncMock()
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "--async-mode",
+                    "organizations-search",
+                    "--search",
+                    "volvo",
+                ],
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+        instance.organizations_search.assert_awaited_once()
+        assert json.loads(result.output)[0]["business_id"] == "SE5560125790"
+
+
+# ── organizations count ───────────────────────────────────────────────────────
 
 
 class TestOrganizationsCount:
@@ -800,6 +1099,9 @@ class TestOrganizationsCount:
         instance.organizations_count.assert_awaited_once_with(
             payload=ANY, wait=True, poll_interval=3, max_wait_seconds=14400
         )
+
+
+# ── enrichment agent ──────────────────────────────────────────────────────────
 
 
 class TestEnrichmentAgent:

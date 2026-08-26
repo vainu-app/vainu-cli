@@ -27,6 +27,7 @@ from conftest import (
     ORGANIZATIONS_COUNT_RESPONSE,
     ORGANIZATIONS_COUNT_SCHEDULED_RESPONSE,
     ORGANIZATIONS_RESPONSE,
+    ORGANIZATIONS_SEARCH_RESPONSE,
     SIGNALS_DATA_CHANGES_RESPONSE,
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
@@ -307,6 +308,44 @@ class TestVainuAPIKeyClientOrganizations:
         result = await client.companies(payload="?country=FI", format="jsonl")
         await client.close()
         assert result == JSONL_RESPONSE
+
+
+class TestVainuAPIKeyClientOrganizationsSearch:
+    PAYLOAD = {"search": "volvo", "database": "SE", "fields": ["business_id", "name"]}
+
+    @respx.mock
+    async def test_returns_bare_array(self):
+        route = respx.post(f"{BASE_URL}/v3/organizations/search/?format=json").mock(
+            return_value=httpx.Response(200, json=ORGANIZATIONS_SEARCH_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_search(payload=self.PAYLOAD)
+        await client.close()
+        assert isinstance(result, list)
+        assert result[0]["business_id"] == "SE5560125790"
+        assert json.loads(route.calls[0].request.content) == self.PAYLOAD
+
+    @respx.mock
+    async def test_uses_explicit_format(self):
+        respx.post(f"{BASE_URL}/v3/organizations/search/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=JSONL_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        result = await client.organizations_search(payload=self.PAYLOAD, format="jsonl")
+        await client.close()
+        assert result == JSONL_RESPONSE
+
+    @respx.mock
+    async def test_stream_yields_lines(self):
+        respx.post(f"{BASE_URL}/v3/organizations/search/?format=jsonl").mock(
+            return_value=httpx.Response(200, text=JSONL_STREAM_RESPONSE)
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_organizations_search(
+            payload=self.PAYLOAD, format="jsonl"
+        ) as lines:
+            assert [line async for line in lines] == JSONL_STREAM_LINES
+        await client.close()
 
 
 class TestVainuAPIKeyClientOrganizationsCount:

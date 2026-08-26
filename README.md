@@ -182,6 +182,12 @@ vainu organizations --payload payload.json
 echo '{"query": {"country": "SE"}}' | vainu organizations --payload -
 ```
 
+Or look a company up by name, with no payload at all:
+
+```bash
+vainu organizations-search --search volvo --database SE
+```
+
 ### Python library
 
 **Async client:**
@@ -278,6 +284,7 @@ Commands:
   companies             Fetch company data
   companies-async       Export company data via async job
   organizations         Fetch organization data
+  organizations-search  Look up companies by name, business id or domain
   organizations-async   Export organization data via async job
   organizations-count   Count matching organizations without returning rows
   fields                Inspect organization field metadata
@@ -325,6 +332,50 @@ they already download to a file in chunks.
 
 To see which field paths you can put in `query` vs the `fields` output list, use
 [`vainu fields organizations`](#vainu-fields).
+
+### `vainu organizations-search`
+
+Fuzzy free-text lookup — the quick way from a company name to a business ID. Hits
+`POST /v3/organizations/search/`, which takes a plain `search` term instead of the VQL `query`
+that `organizations` expects.
+
+```
+--search TEXT          Company name, business id or domain to look up
+--payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin (flags override its keys)
+--database TEXT        FI | SE | NO | DK | NL — repeat or comma-separate for several
+                       (API default: FI)
+--fields TEXT          Fields to return — repeat or comma-separate
+                       (default: business_id,name,website)
+--limit INT            Max rows to return (API default: 20)
+--offset INT           Rows to skip
+--include-inactive     Include inactive / dissolved companies
+--format               json | csv | jsonl  (default: json)
+--stream/--no-stream   Stream lines as they arrive (default on for csv/jsonl)
+--language TEXT        Accept-Language header
+--output FILE          Write to file instead of stdout
+```
+
+```bash
+vainu organizations-search --search volvo --database SE
+vainu organizations-search --search volvo --database SE,FI --limit 5
+vainu organizations-search --payload '{"search": "volvo", "database": ["SE", "FI"]}'
+vainu organizations-search --search volvo --fields business_id --format jsonl | jq -r .business_id
+```
+
+`--payload` carries the same keys — `search`, `database`, `fields`, `limit`, `offset`,
+`is_active` — and any flag you also pass overrides the matching key. Several databases must
+travel as a JSON list; the CLI splits a comma-joined `"SE,FI"` into one for you, since the API
+rejects that form (`400 Database not supported permission`).
+
+The response is a **bare JSON array** of the requested fields — no `result` / `count` / `next`
+wrapper like `organizations`, and only the fields named in `--fields` come back (ask for none and
+the API returns empty objects, which is why the CLI fills in a default set).
+
+Two things to know about paging: the `skip` key in the API reference is ignored — use `--offset`
+— and `--offset` slices a relevance-ranked pool whose size follows `--limit`, so offsetting far
+past `--limit` returns nothing. Raise `--limit` rather than paging deep, and use
+[`vainu organizations`](#vainu-organizations--vainu-organizations-async) when you need
+exhaustive, filterable results.
 
 ### `vainu organizations-count`
 
@@ -653,7 +704,7 @@ rest of the body and the API ignores it; drop it if you prefer a minimal request
 | [`03-geospatial-business-unit-search-returning-only-matching-business_units.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/03-geospatial-business-unit-search-returning-only-matching-business_units.json) | Geo sphere search with `unwind_subdocument` — only matching business units | |
 | [`04-get-all-companies-in-vainu-list-async-sync.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/04-get-all-companies-in-vainu-list-async-sync.json) | Every company in a saved Vainu list | `list` is a placeholder ID — swap in your own |
 | [`05-get-count-of-vehicles-with-make-and-registration.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/05-get-count-of-vehicles-with-make-and-registration.json) | Per-company Skoda count via `?FILTER_SUBDOCUMENTS` + `?COUNT` | `limit` is 1000000 — lower it before running interactively |
-| [`06-simple-fuzzy-search-api.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/06-simple-fuzzy-search-api.json) | Fuzzy free-text search for "volvo" | Targets `/v3/organizations/search/`, which the CLI does not reach |
+| [`06-simple-fuzzy-search-api.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/06-simple-fuzzy-search-api.json) | Fuzzy free-text search for "volvo" | Use with [`vainu organizations-search`](#vainu-organizations-search) |
 | [`07-search-companies-with-geo-sphere-with-coordinates.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/07-search-companies-with-geo-sphere-with-coordinates.json) | `?GEO_WITHIN_SPHERE` returning whole companies | Radius is in radians (metres ÷ 6371000) |
 | [`08-simple-filtering-example-using-v3organizations.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/08-simple-filtering-example-using-v3organizations.json) | Minimal exact-match filter on `business_id` | Start here |
 | [`09-simple-oauth-client-credentials-example.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/organizations_api/09-simple-oauth-client-credentials-example.json) | The same filter, run under OAuth client credentials | |
@@ -794,6 +845,7 @@ vainu enrichment-agent \
 | `companies_async(payload, format)` | Submit async job → `AsyncResult` |
 | `organizations(payload, format)` | Fetch organization data (`dict` for `json`, raw `str` for `csv`/`jsonl`) |
 | `organizations_async(payload, format)` | Submit async job → `AsyncResult` |
+| `organizations_search(payload, format)` | Fuzzy free-text lookup (bare `list` for `json`, raw `str` for `csv`/`jsonl`) |
 | `organizations_count(payload, wait?, poll_interval?, max_wait_seconds?)` | Count matching organizations (`dict` of count metadata). Drops `order`, which the endpoint rejects. `wait=True` re-sends the payload until `status` leaves `scheduled`/`process` |
 | `organization_fields(api_versions?)` | Organization field catalog (`list`) |
 | `enrichment_agent(payload, format)` | Run an enrichment agent prompt on one company (`dict` for `json`) |
@@ -810,6 +862,7 @@ vainu enrichment-agent \
 | `organization_list_dynamic_update(list_id, payload, format)` | Update a dynamic list |
 | `stream_companies(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
 | `stream_organizations(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
+| `stream_organizations_search(payload, format)` | Context manager → line iterator (`csv`/`jsonl`) |
 | `stream_signals_news(payload, format)` | Context manager → line iterator (`jsonl`) |
 | `stream_signals_data_changes(payload, format)` | Context manager → line iterator (`jsonl`) |
 | `close()` | Close HTTP connection |

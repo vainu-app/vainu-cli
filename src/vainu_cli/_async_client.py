@@ -358,6 +358,46 @@ class VainuAPIBaseClient:
             format=format,
         )
 
+    async def organizations_search(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_RESPONSE_FORMAT,
+    ) -> dict | list | str:
+        """Fuzzy free-text lookup by company name, business id or domain.
+
+        Unlike `organizations`, this takes a plain `search` term instead of a VQL
+        `query`, and answers with a bare array of the requested `fields` — no
+        `count` or `next` wrapper. Only the fields named in `fields` come back;
+        ask for none and every hit is an empty object.
+
+        Paging is best-effort: the endpoint ignores the `skip` key its API
+        reference documents, and `offset` slices a relevance-ranked pool whose
+        size follows `limit` — so raise `limit` instead of offsetting deep.
+        """
+        return parse_response(
+            await self.request(
+                method=http.HTTPMethod.POST,
+                path=f"/v3/organizations/search/?format={format}",
+                json=payload,
+            ),
+            format,
+        )
+
+    @asynccontextmanager
+    async def stream_organizations_search(
+        self,
+        payload: dict,
+        format: ResponseFormat = DEFAULT_STREAM_FORMAT,
+    ) -> AsyncIterator[AsyncIterator[str]]:
+        """Stream fuzzy-search hits line by line (`csv` / `jsonl` only)."""
+        ensure_streamable(format)
+        async with self.stream(
+            method=http.HTTPMethod.POST,
+            path=f"/v3/organizations/search/?format={format}",
+            json=payload,
+        ) as lines:
+            yield lines
+
     async def organizations_count(
         self,
         payload: dict,

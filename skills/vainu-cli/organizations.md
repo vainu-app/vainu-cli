@@ -122,11 +122,41 @@ Counts are computed in the background, so the API answers a cold cache with
 `status` and `eta_utc`. `status: "error"` exits non-zero. Response keys: `count`, `status`,
 `time`, `duration`, `rate_of_change`, `eta_utc`.
 
+## Fuzzy search
+
+`vainu organizations-search` hits `POST /v3/organizations/search/` — a plain text lookup by
+company name, business ID or domain, for when you have a name and need a `business_id`. It takes
+no VQL at all.
+
+```bash
+vainu organizations-search --search volvo --database SE
+vainu organizations-search --search volvo --database SE,FI --limit 5
+vainu organizations-search --payload '{"search": "volvo", "database": ["SE", "FI"]}'
+vainu organizations-search --search volvo --fields business_id --format jsonl | jq -r .business_id
+```
+
+Flags: `--search`, `--database`, `--fields` (each repeatable or comma-separated), `--limit`,
+`--offset`, `--include-inactive`, plus the usual `--format` / `--stream` / `--output`. A
+`--payload` may carry the same keys and any flag overrides it. Several databases go as a JSON
+list (`["SE", "FI"]`) — the API rejects a comma-joined `"SE,FI"`, so the CLI splits that form
+itself, whether it came from the flag or from a payload; a single database stays a plain string.
+
+The reply is a **bare JSON array** of just the requested fields — no `result`/`count`/`next`
+wrapper. With no `fields` the API returns empty objects, so the CLI defaults to
+`business_id,name,website`.
+
+Paging caveats:
+
+- The `skip` key in the API reference is **ignored** — page with `--offset`
+- `--offset` slices a relevance-ranked pool sized from `--limit`, so offsetting well past
+  `--limit` comes back empty. Raise `--limit` instead of paging deep
+- For exhaustive or filtered result sets use `vainu organizations` / `organizations-async`
+
 ## Pitfalls
 
 - `limit` is capped at **100** per request — page with `offset` or use `organizations-async`
 - Counts come from `vainu organizations-count`, not `organizations` — see [Counting](#counting)
-- The CLI does **not** expose `/v3/organizations/search/` (fuzzy search)
+- Fuzzy name lookup is a separate command — `vainu organizations-search`, see [Fuzzy search](#fuzzy-search)
 - Unknown field names in `query` are **silently ignored** — verify paths with `vainu fields organizations`
 - For contact subdocument filters, use `?MATCH` on `contacts` or see bundled aggregation examples
 
@@ -137,6 +167,7 @@ Run `vainu examples list --category organizations_api` for the full list. Key fi
 | Partial name | Use case |
 |--------------|----------|
 | `08-simple-filtering` | Minimal exact-match filter |
+| `06-simple-fuzzy-search-api` | Free-text name search — pair with `organizations-search` |
 | `01-amount-of-companies` | Count-only query — pair with `organizations-count` |
 | `12-count-companies-in-vainu-list` | Count a saved list — pair with `organizations-count` |
 | `02-filter-contacts` | Return only CEO / Privacy Officer contacts |

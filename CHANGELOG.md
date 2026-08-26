@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `vainu organizations-search` — fuzzy free-text lookup of companies by name, business ID or
+  domain, hitting `POST /v3/organizations/search/`. Takes `--search` plus `--database`
+  (repeatable), `--fields`, `--limit`, `--offset` and `--include-inactive`, or a `--payload` that
+  the flags override. `--database` and `--fields` also accept comma-separated values; several
+  databases are sent as a JSON list, the only form the API accepts. The endpoint returns a bare JSON array of only the requested fields — with
+  none named every hit comes back empty, so the CLI defaults to `business_id,name,website`.
+  Supports `--format json|csv|jsonl` with the usual streaming
+- `organizations_search(payload, format)` and `stream_organizations_search(payload, format)` on
+  the async and sync clients
+
 ## [0.1.1] - 2026-08-19
 
 ### Added
