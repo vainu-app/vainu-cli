@@ -715,6 +715,196 @@ def organizations_export(
         click.echo(f"Export saved to {output}", err=True)
 
 
+# ── organizations fuzzy search ───────────────────────────────────────────────
+
+# The endpoint returns only the fields it was asked for, so with no `fields` at
+# all every hit comes back as `{}`. These stand in when the caller names none.
+ORGANIZATIONS_SEARCH_DEFAULT_FIELDS = ("business_id", "name", "website")
+
+
+def _split_option_values(values: Iterable[str]) -> list[str]:
+    """Flatten repeated flags and comma-separated values into one list."""
+    return [part.strip() for value in values for part in str(value).split(",") if part.strip()]
+
+
+def _normalize_databases(value: object) -> str | list[str] | None:
+    """Render one database as a string and several as a list, which is all the API takes.
+
+    A comma-joined string is rejected outright (`400 Database not supported
+    permission`), so `SE,FI` — from the flag or from a payload — is split here
+    rather than sent on to fail.
+    """
+    if value is None:
+        return None
+    candidates = value if isinstance(value, (list, tuple)) else [value]
+    databases = _split_option_values(candidates)
+    if not databases:
+        return None
+    return databases[0] if len(databases) == 1 else databases
+
+
+def _organizations_search_payload(
+    payload_path: str | None,
+    search: str | None,
+    database: tuple[str, ...],
+    fields: tuple[str, ...],
+    limit: int | None,
+    offset: int | None,
+    is_active: bool | None,
+) -> dict:
+    """Build the search body from a payload file, with explicit flags layered on top.
+
+    Same order as `organizations-count`: a saved payload stays reusable while a
+    single flag varies, and a one-off lookup needs no JSON at all.
+    """
+    payload = load_payload(payload_path) if payload_path else {}
+    if not isinstance(payload, dict):
+        raise click.UsageError("--payload must contain a JSON object for organizations-search.")
+    overrides: dict[str, Any] = {
+        "search": search,
+        "database": _normalize_databases(list(database)),
+        "fields": _split_option_values(fields) or None,
+        "limit": limit,
+        "offset": offset,
+        "is_active": is_active,
+    }
+    payload.update({key: value for key, value in overrides.items() if value is not None})
+    # Applies to a payload's own `database` too, so "SE,FI" written in JSON works
+    # the same way as --database SE,FI.
+    normalized_databases = _normalize_databases(payload.get("database"))
+    if normalized_databases is not None:
+        payload["database"] = normalized_databases
+    if not payload.get("search"):
+        raise click.UsageError(
+            'organizations-search needs a search term — pass --search or set "search" in '
+            "--payload. The endpoint answers an empty term with an empty array."
+        )
+    if payload.get("skip") is not None and payload.get("offset") is None:
+        # The API reference documents `skip`, but the endpoint pages on `offset`
+        # and drops `skip` silently — which reads as "paging is broken".
+        click.echo(
+            "Warning: this endpoint ignores 'skip' — use --offset to page.",
+            err=True,
+        )
+    if not payload.get("fields"):
+        payload["fields"] = list(ORGANIZATIONS_SEARCH_DEFAULT_FIELDS)
+    return payload
+
+
+@main.command("organizations-search")
+@option_payload(required=False)
+@click.option("--search", default=None, help="Company name, business id or domain to look up.")
+@click.option(
+    "--database",
+    multiple=True,
+    help="Country database, e.g. FI, SE, NO, DK or NL. Repeat the flag or comma-separate "
+    "to search several at once. [API default: FI]",
+)
+@click.option(
+    "--fields",
+    multiple=True,
+    help="Fields to return — repeat the flag or comma-separate. "
+    f"[default: {','.join(ORGANIZATIONS_SEARCH_DEFAULT_FIELDS)}]",
+)
+@click.option("--limit", default=None, type=int, help="Maximum rows to return.  [API default: 20]")
+@click.option(
+    "--offset",
+    default=None,
+    type=int,
+    help="Rows to skip. The endpoint offsets inside a candidate pool sized from --limit, "
+    "so a deep offset runs dry — raise --limit rather than paging far.",
+)
+@click.option(
+    "--include-inactive",
+    is_flag=True,
+    default=False,
+    help="Include inactive / dissolved companies.",
+)
+@_option_filter_base
+@_option_stream()
+@_option_output(required=False)
+@click.pass_obj
+@_timed_task("organizations-search")
+def organizations_text_search(
+    config: Config,
+    payload_path: str | None,
+    search: str | None,
+    database: tuple[str, ...],
+    fields: tuple[str, ...],
+    limit: int | None,
+    offset: int | None,
+    include_inactive: bool,
+    fmt: ResponseFormat,
+    language: str | None,
+    stream: bool | None,
+    output: str | None,
+) -> None:
+    """Look up companies by name, business id or domain (fuzzy free-text search).
+
+    The quick way from a company name to a business id. Takes a plain search term
+    rather than the VQL query `organizations` expects, and answers with a bare
+    array of the fields you asked for — no count, no next page marker. Hits come
+    back ranked by relevance, so widen --limit rather than paging with --offset.
+
+    \b
+    Example:
+        vainu organizations-search --search volvo --database SE
+        vainu organizations-search --search volvo --database SE --fields business_id,name --limit 5
+    """
+    stream = _resolve_stream(stream, fmt)
+    payload = _organizations_search_payload(
+        payload_path,
+        search,
+        database,
+        fields,
+        limit,
+        offset,
+        # The API defaults to active-only; only say otherwise when asked to.
+        False if include_inactive else None,
+    )
+
+    if stream:
+        if config.async_mode:
+
+            async def _run_stream() -> None:
+                client = _make_async_client(config, language=language)
+                try:
+                    async with client.stream_organizations_search(
+                        payload=payload, format=fmt
+                    ) as lines:
+                        await _write_output_stream_async(lines, output)
+                finally:
+                    await client.close()
+
+            asyncio.run(_run_stream())
+        else:
+            client = _make_sync_client(config, language=language)
+            try:
+                with client.stream_organizations_search(payload=payload, format=fmt) as lines:
+                    _write_output_stream(lines, output)
+            finally:
+                client.close()
+        return
+
+    if config.async_mode:
+
+        async def _run() -> dict | list | str:
+            client = _make_async_client(config, language=language)
+            try:
+                return await client.organizations_search(payload=payload, format=fmt)
+            finally:
+                await client.close()
+
+        result = asyncio.run(_run())
+    else:
+        client = _make_sync_client(config, language=language)
+        try:
+            result = client.organizations_search(payload=payload, format=fmt)
+        finally:
+            client.close()
+    _write_output(result, output)
+
+
 # ── organizations count ──────────────────────────────────────────────────────
 
 

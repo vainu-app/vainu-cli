@@ -90,6 +90,7 @@ carries detailed CLI instructions (VQL, signals, exports).
 | Task | Approach |
 |------|----------|
 | Company / organization search | `vainu organizations --payload ...` |
+| Look a company up by name / domain | `vainu organizations-search --search ...` |
 | Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
 | How many companies match a query | `vainu organizations-count --payload ...` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |

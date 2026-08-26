@@ -57,6 +57,13 @@ ORGANIZATIONS_RESPONSE = {
     "next": None,
 }
 
+# The fuzzy search endpoint answers with a bare array of the requested fields —
+# no result/count/next wrapper like /v3/organizations/.
+ORGANIZATIONS_SEARCH_RESPONSE = [
+    {"business_id": "SE5560125790", "name": "Aktiebolaget Volvo"},
+    {"business_id": "SE5560743089", "name": "Volvo Personvagnar Aktiebolag"},
+]
+
 # The count endpoint answers with metadata only. A cold cache reports
 # status "scheduled" and no count yet; the caller re-POSTs until it goes "ready".
 ORGANIZATIONS_COUNT_RESPONSE = {
