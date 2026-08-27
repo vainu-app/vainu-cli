@@ -1,14 +1,22 @@
 """Unit tests for the shared helpers in vainu_cli.common."""
 
+import logging
+
 import pytest
 
 from vainu_cli.common import (
     COUNT_PENDING_STATUSES,
     DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     POLL_RETRY_MAX_BACKOFF_SECONDS,
+    LineDecoder,
+    companies_request,
     count_is_pending,
     count_payload,
+    is_line_safe,
     poll_retry_delay,
+    requested_encoding,
+    response_encoding,
+    with_encoding,
 )
 
 
@@ -104,3 +112,140 @@ class TestAsyncMaxWait:
 
         assert AsyncBase.ASYNC_MAX_WAIT_SECONDS == DEFAULT_ASYNC_MAX_WAIT_SECONDS
         assert SyncBase.ASYNC_MAX_WAIT_SECONDS == DEFAULT_ASYNC_MAX_WAIT_SECONDS
+
+
+class TestWithEncoding:
+    PAYLOAD = {"database": "FI", "fields": ["name"]}
+
+    def test_csv_payload_asks_for_utf8(self):
+        """Without this the API renders CSV as ISO-8859-1 — see the module comment."""
+        assert with_encoding(self.PAYLOAD, "csv") == {**self.PAYLOAD, "encoding": "utf-8"}
+
+    def test_original_payload_is_left_alone(self):
+        with_encoding(self.PAYLOAD, "csv")
+        assert "encoding" not in self.PAYLOAD
+
+    @pytest.mark.parametrize("format", ["json", "jsonl"])
+    def test_json_formats_are_untouched(self, format):
+        """Both JSON renderers answer in UTF-8 whatever the payload says."""
+        assert with_encoding(self.PAYLOAD, format) == self.PAYLOAD
+
+    def test_caller_chosen_encoding_wins(self):
+        payload = {**self.PAYLOAD, "encoding": "latin-1"}
+        assert with_encoding(payload, "csv") == payload
+
+    def test_query_string_payload_gets_the_parameter(self):
+        assert with_encoding("?country=FI", "csv") == "?country=FI&encoding=utf-8"
+
+    @pytest.mark.parametrize("payload", ["?", "?country=FI&"])
+    def test_query_string_payload_does_not_double_the_separator(self, payload):
+        assert with_encoding(payload, "csv") == f"{payload}encoding=utf-8"
+
+    def test_query_string_encoding_is_kept(self):
+        assert (
+            with_encoding("?country=FI&encoding=latin-1", "csv") == "?country=FI&encoding=latin-1"
+        )
+
+    def test_empty_encoding_is_replaced(self):
+        """An empty value is not a choice — the API falls back to its legacy codec."""
+        assert with_encoding({"encoding": ""}, "csv") == {"encoding": "utf-8"}
+
+    def test_an_explicit_encoding_overrides_the_payload(self):
+        """A --encoding flag has to beat an `encoding` saved in a payload file."""
+        payload = {**self.PAYLOAD, "encoding": "utf-8"}
+        assert with_encoding(payload, "csv", "latin-1") == {**self.PAYLOAD, "encoding": "latin-1"}
+
+    def test_an_explicit_encoding_is_added_to_a_query_string(self):
+        assert with_encoding("?country=FI", "csv", "latin-1") == "?country=FI&encoding=latin-1"
+
+    def test_an_explicit_encoding_replaces_the_one_in_a_query_string(self):
+        assert (
+            with_encoding("?country=FI&encoding=utf-8&limit=5", "csv", "latin-1")
+            == "?country=FI&encoding=latin-1&limit=5"
+        )
+
+    @pytest.mark.parametrize("format", ["json", "jsonl"])
+    def test_json_formats_ignore_an_explicit_encoding(self, format):
+        assert with_encoding(self.PAYLOAD, format, "latin-1") == self.PAYLOAD
+
+
+class TestRequestedEncoding:
+    def test_reads_a_dict_payload(self):
+        assert requested_encoding({"encoding": "utf-16"}) == "utf-16"
+
+    def test_reads_a_query_string_payload(self):
+        assert requested_encoding("?country=FI&encoding=utf-16") == "utf-16"
+
+    @pytest.mark.parametrize("payload", [{}, {"encoding": ""}, "?country=FI", "?encoding="])
+    def test_absent_or_empty_reads_as_unset(self, payload):
+        assert requested_encoding(payload) is None
+
+
+class TestResponseEncoding:
+    def test_csv_follows_the_payload(self):
+        assert response_encoding({"encoding": "latin-1"}, "csv") == "latin-1"
+
+    def test_csv_defaults_to_utf8(self):
+        assert response_encoding({}, "csv") == "utf-8"
+
+    @pytest.mark.parametrize("format", ["json", "jsonl"])
+    def test_json_formats_stay_utf8(self, format):
+        """The JSON renderers ignore `encoding`, and one payload is reused across formats."""
+        assert response_encoding({"encoding": "latin-1"}, format) == "utf-8"
+
+
+class TestCompaniesRequestEncoding:
+    def test_csv_post_body_carries_the_encoding(self):
+        _, _, body = companies_request({"country": "FI"}, "csv")
+        assert body == {"country": "FI", "encoding": "utf-8"}
+
+    def test_csv_get_query_carries_the_encoding(self):
+        _, path, body = companies_request("?country=FI", "csv")
+        assert path == "/v2/companies/?country=FI&encoding=utf-8&format=csv"
+        assert body is None
+
+    def test_jsonl_request_is_unchanged(self):
+        _, path, body = companies_request({"country": "FI"}, "jsonl")
+        assert body == {"country": "FI"}
+        assert path == "/v2/companies/?format=jsonl"
+
+
+class TestLineDecoder:
+    def test_decodes_the_requested_encoding(self):
+        assert LineDecoder()("Tynjälä".encode()) == "Tynjälä"
+
+    def test_decodes_a_caller_chosen_encoding(self):
+        assert LineDecoder("latin-1")("Tynjälä".encode("latin-1")) == "Tynjälä"
+
+    def test_a_mismatched_body_falls_back_instead_of_raising(self):
+        """A strict decode would abort the export mid-row, after earlier rows shipped."""
+        assert LineDecoder()("Tynjälä".encode("latin-1")) == "Tynjälä"
+
+    def test_undecodable_bytes_are_replaced(self):
+        assert LineDecoder()(b"\x81") == "\ufffd"
+
+    def test_the_fallback_is_logged_once_per_body(self, caplog):
+        decode = LineDecoder()
+        with caplog.at_level(logging.WARNING, logger="vainu_cli.common"):
+            for _ in range(3):
+                decode("Tynjälä".encode("latin-1"))
+        assert len(caplog.records) == 1
+        assert "utf-8" in caplog.records[0].getMessage()
+
+
+class TestIsLineSafe:
+    @pytest.mark.parametrize("encoding", ["utf-8", "latin-1", "cp1252", "mac-roman", "ascii"])
+    def test_byte_oriented_codecs_survive_line_splitting(self, encoding):
+        assert is_line_safe(encoding) is True
+
+    def test_a_per_line_bom_is_fine(self):
+        """The API emits a utf-8-sig BOM on every row, and each line decode strips it."""
+        assert is_line_safe("utf-8-sig") is True
+
+    @pytest.mark.parametrize("encoding", ["utf-16", "utf-32"])
+    def test_wide_codecs_do_not(self, encoding):
+        """Splitting on b"\n" cuts their characters in half."""
+        assert is_line_safe(encoding) is False
+
+    def test_unknown_codec_is_not_line_safe(self):
+        assert is_line_safe("utf8mb4") is False

@@ -303,6 +303,7 @@ Commands:
 --payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin
 --payload-path ...     Alias for --payload
 --format               json | csv | jsonl  (default: json)
+--encoding TEXT        Codec for --format csv (default: utf-8)
 --stream/--no-stream   Stream lines as they arrive (default on for csv/jsonl)
 --output FILE          Write to file instead of stdout
 ```
@@ -316,6 +317,7 @@ Submits an async export job, polls until complete, and downloads the result.
 --payload JSON/FILE/-  Inline JSON, a file path, or "-" for stdin
 --payload-path ...     Alias for --payload
 --format               json | csv | jsonl  (default: json)
+--encoding TEXT        Codec for --format csv (default: utf-8)
 --output FILE          Output file (required)
 --poll-interval INT    Polling interval in seconds (default: 3)
 --timeout INT          Max wait seconds (default: 14400)
@@ -350,6 +352,7 @@ that `organizations` expects.
 --offset INT           Rows to skip
 --include-inactive     Include inactive / dissolved companies
 --format               json | csv | jsonl  (default: json)
+--encoding TEXT        Codec for --format csv (default: utf-8)
 --stream/--no-stream   Stream lines as they arrive (default on for csv/jsonl)
 --language TEXT        Accept-Language header
 --output FILE          Write to file instead of stdout
@@ -509,6 +512,13 @@ vainu signals-news --payload payload.json --format jsonl --output signals.jsonl
 - `--no-stream` forces the old buffered behaviour for `jsonl`/`csv`.
 - Works under both the default sync client and `--async-mode`.
 - With `csv`, the first line out is the header row.
+- CSV rows arrive as UTF-8 unless you ask otherwise. The API's CSV renderer defaults to
+  ISO-8859-1 — while still declaring `charset=utf-8` — so every CSV request carries
+  `encoding: "utf-8"`. `--encoding` picks another codec: it is sent to the API, used to decode
+  the rows, and used to write them, so `--encoding latin-1 --output legacy.csv` really does
+  produce a latin-1 file. `--encoding utf-8-sig` gives the BOM Excel wants. An `encoding` in
+  `--payload` does the same and the flag overrides it; `json` and `jsonl` are UTF-8 regardless
+  and ignore both.
 - Streaming drops blank lines and, with `--output`, always ends the file with a newline;
   `--no-stream` copies the body verbatim, trailing byte included. The rows themselves are the
   same either way.
@@ -961,6 +971,12 @@ asyncio.run(main())
 `ValueError`, since a single JSON document only becomes valid once its last byte lands. With
 `csv` the first line is the header row. Error bodies behave as they do on the buffered methods:
 `400`/`403`/`404` are yielded as the response text rather than raised, other failures raise.
+
+`format="csv"` requests are sent with `encoding: "utf-8"` — the API's CSV renderer otherwise
+answers in ISO-8859-1 while declaring `charset=utf-8`, which mangles or breaks a Nordic name.
+Set `encoding` in the payload yourself (any Python codec name) to override; the lines are then
+decoded with it. This applies to `companies`, `organizations`, `organizations_search`, their
+`stream_*` variants and the async export jobs.
 
 ---
 

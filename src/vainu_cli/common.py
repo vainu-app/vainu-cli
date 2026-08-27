@@ -2,8 +2,13 @@
 
 import enum
 import http
+import logging
+import re
 from collections.abc import Iterator
 from typing import Literal, Protocol, TypeAlias
+from urllib.parse import parse_qs
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.vainu.io/api"
 JWT_REFRESH_ENDPOINT_PATH = "/token_authentication/refresh/"
@@ -105,9 +110,126 @@ def lines_from_text(text: str) -> Iterator[str]:
             yield line
 
 
+# The CSV renderer still defaults to a legacy single-byte encoding: ask for
+# `format=csv` without saying more and a Finnish name comes back as ISO-8859-1
+# bytes — while the response header claims `charset=utf-8`. Nothing downstream
+# can paper over that mismatch: the streaming path dies with a
+# UnicodeDecodeError partway through the export, and the buffered path silently
+# substitutes U+FFFD. So every CSV request names its encoding. The API hands the
+# value to a Python codec, so a caller who wants the legacy bytes (or anything
+# else) can still set `encoding` in the payload and keep it.
+ENCODING_KEY = "encoding"
+DEFAULT_ENCODING = "utf-8"
+# What to fall back to when the body is not the encoding we asked for. The
+# legacy CSV output is ISO-8859-1, and cp1252 decodes that byte range
+# identically while also covering the Windows punctuation ISO-8859-1 leaves as
+# control characters.
+FALLBACK_ENCODING = "cp1252"
+
+
+def requested_encoding(payload: dict | str) -> str | None:
+    """The `encoding` this payload asks for, if it asks at all."""
+    if isinstance(payload, dict):
+        value = payload.get(ENCODING_KEY)
+    else:
+        values = parse_qs(payload.lstrip("?")).get(ENCODING_KEY) or []
+        value = values[-1] if values else None
+    return value if isinstance(value, str) and value else None
+
+
+# Matches the `encoding` parameter of a query-string payload, value included.
+_ENCODING_PARAM_RE = re.compile(rf"(?<=[?&]){ENCODING_KEY}=[^&]*")
+
+
+def with_encoding(
+    payload: dict | str,
+    format: ResponseFormat,
+    encoding: str | None = None,
+) -> dict | str:
+    """Name the codec a CSV response should be rendered in.
+
+    An explicit `encoding` wins over one the payload carries — that is what lets
+    a CLI flag override a saved payload. Without one, a payload that names its
+    own codec is left alone and everything else is pinned to UTF-8. Only `csv`
+    needs any of this: `json` and `jsonl` are UTF-8 either way and ignore the key.
+    """
+    if format != "csv":
+        return payload
+    chosen = encoding or requested_encoding(payload) or DEFAULT_ENCODING
+    if isinstance(payload, dict):
+        if payload.get(ENCODING_KEY) == chosen:
+            return payload
+        return {**payload, ENCODING_KEY: chosen}
+    # A query-string payload rides on a GET, where `encoding` is just another
+    # parameter. It cannot go in the query string of a POST: the API rejects
+    # every parameter but `format` there with "Include the parameters only in
+    # either the GET request or the POST payload, not both".
+    replaced, count = _ENCODING_PARAM_RE.subn(f"{ENCODING_KEY}={chosen}", payload)
+    if count:
+        return replaced
+    separator = "" if payload.endswith(("?", "&")) else "&"
+    return f"{payload}{separator}{ENCODING_KEY}={chosen}"
+
+
+def is_line_safe(encoding: str) -> bool:
+    """Whether a codec survives a body that is split on newline bytes.
+
+    Both clients hand rows over one at a time, splitting on b"\n" before
+    decoding. A codec that spells ASCII in more than one byte — utf-16 and
+    friends — wraps its own nulls around that delimiter, so every row but the
+    first would decode to nonsense. A per-line BOM is fine: the API emits one
+    for `utf-8-sig` on every row, and the decoder strips it from each line.
+    """
+    try:
+        parts = "a\nb".encode(encoding).split(b"\n")
+        return [part.decode(encoding) for part in parts] == ["a", "b"]
+    except (LookupError, UnicodeError, ValueError):
+        return False
+
+
+def response_encoding(payload: dict | str, format: ResponseFormat) -> str:
+    """The codec the response body will arrive in, for decoding it.
+
+    Only `csv` follows the payload's `encoding` — the JSON renderers ignore the
+    key and always answer in UTF-8, and one payload is routinely sent under
+    several formats, so honouring it there would mangle a `jsonl` body.
+    """
+    if format == "csv":
+        return requested_encoding(payload) or DEFAULT_ENCODING
+    return DEFAULT_ENCODING
+
+
+class LineDecoder:
+    """Decodes body lines, tolerating a body that ignored the asked-for codec.
+
+    A strict decode is not survivable here: it aborts an export mid-row, after
+    the rows before it have already been handed to the caller. One decoder per
+    response, so the warning is logged once per body rather than once per row.
+    """
+
+    def __init__(self, encoding: str = DEFAULT_ENCODING) -> None:
+        self._encoding = encoding
+        self._warned = False
+
+    def __call__(self, line: bytes) -> str:
+        try:
+            return line.decode(self._encoding)
+        except UnicodeDecodeError:
+            if not self._warned:
+                self._warned = True
+                logger.warning(
+                    "Response body is not %s as requested — decoding it as %s instead; "
+                    "non-ASCII characters may be wrong.",
+                    self._encoding,
+                    FALLBACK_ENCODING,
+                )
+            return line.decode(FALLBACK_ENCODING, errors="replace")
+
+
 def companies_request(
     payload: dict | str,
     format: ResponseFormat,
+    encoding: str | None = None,
 ) -> tuple[http.HTTPMethod, str, dict | None]:
     """Resolve the companies endpoint call for a dict (POST) or query-string (GET) payload.
 
@@ -115,9 +237,11 @@ def companies_request(
     """
     path = "/v2/companies/"
     if isinstance(payload, dict):
-        return http.HTTPMethod.POST, f"{path}?format={format}", payload
+        body = with_encoding(payload, format, encoding)
+        return http.HTTPMethod.POST, f"{path}?format={format}", body
     if isinstance(payload, str):
-        return http.HTTPMethod.GET, f"{path}{payload}&format={format}", None
+        query = with_encoding(payload, format, encoding)
+        return http.HTTPMethod.GET, f"{path}{query}&format={format}", None
     raise ValueError("payload must be str or dict")
 
 

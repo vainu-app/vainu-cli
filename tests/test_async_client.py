@@ -726,6 +726,92 @@ class TestVainuAPIKeyClientStreaming:
         assert len(route.calls) == 2
 
 
+class TestVainuAPIKeyClientCsvEncoding:
+    """CSV is the one format the API renders in a legacy encoding unless asked."""
+
+    CSV_TEXT = '"business_id";"name"\r\n"FI14038544";"Tynjälä Kari"\r\n'
+    CSV_LEGACY_BODY = CSV_TEXT.encode("latin-1")
+    PAYLOAD = {"database": "FI", "fields": ["business_id", "name"]}
+
+    @staticmethod
+    async def _collect(lines) -> list[str]:
+        return [line async for line in lines]
+
+    @respx.mock
+    async def test_stream_organizations_asks_for_utf8(self):
+        route = respx.post(f"{BASE_URL}/v3/organizations/?format=csv").mock(
+            return_value=httpx.Response(200, content=self.CSV_TEXT.encode())
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_organizations(payload=self.PAYLOAD, format="csv") as lines:
+            rows = await self._collect(lines)
+        await client.close()
+        assert json.loads(route.calls[0].request.content)["encoding"] == "utf-8"
+        assert rows == self.CSV_TEXT.splitlines()
+
+    @respx.mock
+    async def test_stream_organizations_honours_a_chosen_encoding(self):
+        """httpx would decode by the header's charset, which claims utf-8 regardless."""
+        route = respx.post(f"{BASE_URL}/v3/organizations/?format=csv").mock(
+            return_value=httpx.Response(
+                200,
+                content=self.CSV_LEGACY_BODY,
+                headers={"Content-Type": "text/csv; charset=utf-8"},
+            )
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        payload = {**self.PAYLOAD, "encoding": "latin-1"}
+        async with client.stream_organizations(payload=payload, format="csv") as lines:
+            rows = await self._collect(lines)
+        await client.close()
+        assert json.loads(route.calls[0].request.content)["encoding"] == "latin-1"
+        assert rows == self.CSV_TEXT.splitlines()
+
+    @respx.mock
+    async def test_stream_jsonl_ignores_a_payload_encoding(self):
+        respx.post(f"{BASE_URL}/v3/organizations/?format=jsonl").mock(
+            return_value=httpx.Response(200, content=JSONL_RESPONSE.encode())
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        payload = {**self.PAYLOAD, "encoding": "latin-1"}
+        async with client.stream_organizations(payload=payload, format="jsonl") as lines:
+            rows = await self._collect(lines)
+        await client.close()
+        assert rows == JSONL_RESPONSE.splitlines()
+
+    @respx.mock
+    async def test_buffered_organizations_asks_for_utf8(self):
+        route = respx.post(f"{BASE_URL}/v3/organizations/?format=csv").mock(
+            return_value=httpx.Response(200, content=self.CSV_TEXT.encode())
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        await client.organizations(payload=self.PAYLOAD, format="csv")
+        await client.close()
+        assert json.loads(route.calls[0].request.content)["encoding"] == "utf-8"
+
+    @respx.mock
+    async def test_organizations_search_asks_for_utf8(self):
+        route = respx.post(f"{BASE_URL}/v3/organizations/search/?format=csv").mock(
+            return_value=httpx.Response(200, content=self.CSV_TEXT.encode())
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        await client.organizations_search(payload={"search": "tynjälä"}, format="csv")
+        await client.close()
+        assert json.loads(route.calls[0].request.content)["encoding"] == "utf-8"
+
+    @respx.mock
+    async def test_stream_companies_query_string_asks_for_utf8(self):
+        route = respx.get(url__startswith=f"{BASE_URL}/v2/companies/").mock(
+            return_value=httpx.Response(200, content=self.CSV_TEXT.encode())
+        )
+        client = VainuAPIKeyClient(api_key="test-key")
+        async with client.stream_companies(payload="?country=FI", format="csv") as lines:
+            rows = await self._collect(lines)
+        await client.close()
+        assert "encoding=utf-8" in str(route.calls[0].request.url)
+        assert rows == self.CSV_TEXT.splitlines()
+
+
 # ── VainuOAuthAPIClient ──────────────────────────────────────────────────────
 
 

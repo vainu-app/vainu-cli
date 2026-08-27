@@ -1,11 +1,14 @@
 """Click-based CLI for the Vainu API."""
 
 import asyncio
+import codecs
+import io
 import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterable, Callable, Iterable
+from collections.abc import AsyncIterable, Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from time import perf_counter
@@ -41,6 +44,7 @@ from vainu_cli.auth.commands import (
 )
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
 from vainu_cli.common import (
+    DEFAULT_ENCODING,
     DEFAULT_TIMEOUT_SECONDS,
     ENRICHMENT_RESPONSE_FORMATS,
     PUBLIC_CLIENT_ID,
@@ -48,6 +52,9 @@ from vainu_cli.common import (
     SIGNALS_RESPONSE_FORMATS,
     STREAMABLE_FORMATS,
     ResponseFormat,
+    is_line_safe,
+    response_encoding,
+    with_encoding,
 )
 from vainu_cli.examples_commands import examples_group
 from vainu_cli.fields_commands import fields_group
@@ -259,37 +266,56 @@ def _resolve_credentials(
     return "apikey", None, None
 
 
-def _write_output(data: dict | list | str, output: str | None) -> None:
+@contextmanager
+def _sink(output: str | None, encoding: str | None) -> Iterator[io.TextIOBase]:
+    """Where rows are written — a file, or stdout — in the codec they came in.
+
+    Rows fetched as latin-1 are written as latin-1: asking the API for a codec
+    and then re-encoding the result would make the flag a no-op. Naming the
+    codec also stops a file from being written in whatever the platform locale
+    happens to be, which is not UTF-8 on Windows.
+    """
+    codec = encoding or DEFAULT_ENCODING
+    if output:
+        with open(output, "w", encoding=codec) as file_sink:
+            yield file_sink
+        click.echo(f"Written to {output}", err=True)
+        return
+    # Line buffered so a slow export still appears row by row rather than in
+    # one lump when the pipe fills.
+    stream = io.TextIOWrapper(
+        click.get_binary_stream("stdout"), encoding=codec, line_buffering=True
+    )
+    try:
+        yield stream
+    finally:
+        stream.flush()
+        stream.detach()
+
+
+def _write_output(data: dict | list | str, output: str | None, encoding: str | None = None) -> None:
     text = data if isinstance(data, str) else json.dumps(data, indent=2, ensure_ascii=False)
-    if output:
-        with open(output, "w") as fh:
-            fh.write(text)
-        click.echo(f"Written to {output}", err=True)
-    else:
-        click.echo(text)
+    with _sink(output, encoding) as sink:
+        # A file gets the body verbatim, trailing byte included; a terminal gets
+        # the newline it expects after the last line.
+        sink.write(text if output else f"{text}\n")
 
 
-def _write_output_stream(lines: Iterable[str], output: str | None) -> None:
+def _write_output_stream(
+    lines: Iterable[str], output: str | None, encoding: str | None = None
+) -> None:
     """Write lines as they arrive, so a slow export reports progress as it runs."""
-    if output:
-        with open(output, "w") as fh:
-            for line in lines:
-                fh.write(f"{line}\n")
-        click.echo(f"Written to {output}", err=True)
-    else:
+    with _sink(output, encoding) as sink:
         for line in lines:
-            click.echo(line)
+            sink.write(f"{line}\n")
 
 
-async def _write_output_stream_async(lines: AsyncIterable[str], output: str | None) -> None:
-    if output:
-        with open(output, "w") as fh:
-            async for line in lines:
-                fh.write(f"{line}\n")
-        click.echo(f"Written to {output}", err=True)
-    else:
+async def _write_output_stream_async(
+    lines: AsyncIterable[str], output: str | None, encoding: str | None = None
+) -> None:
+    with _sink(output, encoding) as sink:
         async for line in lines:
-            click.echo(line)
+            sink.write(f"{line}\n")
 
 
 def _streamable(formats: tuple[ResponseFormat, ...]) -> tuple[ResponseFormat, ...]:
@@ -366,6 +392,40 @@ def _option_stream(
     )
 
 
+def _validate_encoding(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
+    """Reject a codec the API or the line-by-line reader cannot honour.
+
+    Worth catching here: the API answers an encoding it cannot resolve with an
+    empty 200 body, so a typo reads as "no companies matched" rather than as a
+    mistake.
+    """
+    if value is None:
+        return None
+    try:
+        codecs.lookup(value)
+    except LookupError:
+        raise click.BadParameter(
+            f"{value!r} is not a known codec. Try utf-8, utf-8-sig or latin-1."
+        ) from None
+    if not is_line_safe(value):
+        raise click.BadParameter(
+            f"{value!r} spells ASCII in more than one byte, and CSV rows are read one line "
+            f"at a time. Use utf-8, utf-8-sig or a single-byte codec such as latin-1."
+        )
+    return value
+
+
+def _option_encoding(func: F) -> F:
+    return click.option(
+        "--encoding",
+        default=None,
+        callback=_validate_encoding,
+        help=f"Codec for --format csv, as a Python codec name.  [default: {DEFAULT_ENCODING}]  "
+        "The API renders CSV as latin-1 unless asked otherwise; json and jsonl are always "
+        "UTF-8 and ignore this. Overrides an `encoding` set in --payload.",
+    )(func)
+
+
 def _option_language(func: F) -> F:
     return click.option(
         "--language",
@@ -388,6 +448,7 @@ def _option_output(required: bool) -> Callable[[F], F]:
 
 def _option_filter_base(func: F) -> F:
     decorated = _option_format(func)
+    decorated = _option_encoding(decorated)
     decorated = _option_language(decorated)
     return decorated
 
@@ -529,13 +590,15 @@ def companies_search(
     query: str | None,
     payload_path: str | None,
     fmt: ResponseFormat,
+    encoding: str | None,
     language: str | None,
     stream: bool | None,
     output: str | None,
 ) -> None:
     """Fetch company data (synchronous paginated result)."""
     stream = _resolve_stream(stream, fmt)
-    payload = load_query_or_payload(query, payload_path)
+    payload = with_encoding(load_query_or_payload(query, payload_path), fmt, encoding)
+    rows_in = response_encoding(payload, fmt)
 
     if stream:
         if config.async_mode:
@@ -544,7 +607,7 @@ def companies_search(
                 client = _make_async_client(config, language=language)
                 try:
                     async with client.stream_companies(payload=payload, format=fmt) as lines:
-                        await _write_output_stream_async(lines, output)
+                        await _write_output_stream_async(lines, output, rows_in)
                 finally:
                     await client.close()
 
@@ -553,7 +616,7 @@ def companies_search(
             client = _make_sync_client(config, language=language)
             try:
                 with client.stream_companies(payload=payload, format=fmt) as lines:
-                    _write_output_stream(lines, output)
+                    _write_output_stream(lines, output, rows_in)
             finally:
                 client.close()
         return
@@ -574,7 +637,7 @@ def companies_search(
             result = client.companies(payload=payload, format=fmt)
         finally:
             client.close()
-    _write_output(result, output)
+    _write_output(result, output, rows_in)
 
 
 @main.command("companies-async")
@@ -591,13 +654,14 @@ def companies_export(
     query: str | None,
     payload_path: str | None,
     fmt: ResponseFormat,
+    encoding: str | None,
     language: str | None,
     output: str,
     poll_interval: int,
     timeout: int,
 ) -> None:
     """Export companies via async job — polls until complete and downloads to file."""
-    payload = load_query_or_payload(query, payload_path)
+    payload = with_encoding(load_query_or_payload(query, payload_path), fmt, encoding)
 
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
@@ -630,13 +694,15 @@ def organizations_search(
     config: Config,
     payload_path: str,
     fmt: ResponseFormat,
+    encoding: str | None,
     language: str | None,
     stream: bool | None,
     output: str | None,
 ) -> None:
     """Fetch organization data (POST with JSON payload)."""
     stream = _resolve_stream(stream, fmt)
-    payload = load_payload(payload_path)
+    payload = with_encoding(load_payload(payload_path), fmt, encoding)
+    rows_in = response_encoding(payload, fmt)
 
     if stream:
         if config.async_mode:
@@ -645,7 +711,7 @@ def organizations_search(
                 client = _make_async_client(config, language=language)
                 try:
                     async with client.stream_organizations(payload=payload, format=fmt) as lines:
-                        await _write_output_stream_async(lines, output)
+                        await _write_output_stream_async(lines, output, rows_in)
                 finally:
                     await client.close()
 
@@ -654,7 +720,7 @@ def organizations_search(
             client = _make_sync_client(config, language=language)
             try:
                 with client.stream_organizations(payload=payload, format=fmt) as lines:
-                    _write_output_stream(lines, output)
+                    _write_output_stream(lines, output, rows_in)
             finally:
                 client.close()
         return
@@ -675,7 +741,7 @@ def organizations_search(
             result = client.organizations(payload=payload, format=fmt)
         finally:
             client.close()
-    _write_output(result, output)
+    _write_output(result, output, rows_in)
 
 
 @main.command("organizations-async")
@@ -690,13 +756,14 @@ def organizations_export(
     config: Config,
     payload_path: str,
     fmt: ResponseFormat,
+    encoding: str | None,
     language: str | None,
     output: str,
     poll_interval: int,
     timeout: int,
 ) -> None:
     """Export organizations via async job — polls until complete and downloads to file."""
-    payload = load_payload(payload_path)
+    payload = with_encoding(load_payload(payload_path), fmt, encoding)
 
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
@@ -835,6 +902,7 @@ def organizations_text_search(
     offset: int | None,
     include_inactive: bool,
     fmt: ResponseFormat,
+    encoding: str | None,
     language: str | None,
     stream: bool | None,
     output: str | None,
@@ -852,16 +920,21 @@ def organizations_text_search(
         vainu organizations-search --search volvo --database SE --fields business_id,name --limit 5
     """
     stream = _resolve_stream(stream, fmt)
-    payload = _organizations_search_payload(
-        payload_path,
-        search,
-        database,
-        fields,
-        limit,
-        offset,
-        # The API defaults to active-only; only say otherwise when asked to.
-        False if include_inactive else None,
+    payload = with_encoding(
+        _organizations_search_payload(
+            payload_path,
+            search,
+            database,
+            fields,
+            limit,
+            offset,
+            # The API defaults to active-only; only say otherwise when asked to.
+            False if include_inactive else None,
+        ),
+        fmt,
+        encoding,
     )
+    rows_in = response_encoding(payload, fmt)
 
     if stream:
         if config.async_mode:
@@ -872,7 +945,7 @@ def organizations_text_search(
                     async with client.stream_organizations_search(
                         payload=payload, format=fmt
                     ) as lines:
-                        await _write_output_stream_async(lines, output)
+                        await _write_output_stream_async(lines, output, rows_in)
                 finally:
                     await client.close()
 
@@ -881,7 +954,7 @@ def organizations_text_search(
             client = _make_sync_client(config, language=language)
             try:
                 with client.stream_organizations_search(payload=payload, format=fmt) as lines:
-                    _write_output_stream(lines, output)
+                    _write_output_stream(lines, output, rows_in)
             finally:
                 client.close()
         return
@@ -902,7 +975,7 @@ def organizations_text_search(
             result = client.organizations_search(payload=payload, format=fmt)
         finally:
             client.close()
-    _write_output(result, output)
+    _write_output(result, output, rows_in)
 
 
 # ── organizations count ──────────────────────────────────────────────────────

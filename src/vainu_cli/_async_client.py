@@ -15,6 +15,7 @@ from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
     DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     DEFAULT_BASE_URL,
+    DEFAULT_ENCODING,
     DEFAULT_RESPONSE_FORMAT,
     DEFAULT_STREAM_FORMAT,
     DEFAULT_TIMEOUT_SECONDS,
@@ -29,6 +30,8 @@ from vainu_cli.common import (
     lines_from_text,
     parse_response,
     poll_retry_delay,
+    response_encoding,
+    with_encoding,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +84,17 @@ class AsyncResult:
             ) from exc
 
 
-async def _aiter_nonempty_lines(response: httpx.Response) -> AsyncIterator[str]:
+async def _aiter_nonempty_lines(
+    response: httpx.Response, encoding: str = DEFAULT_ENCODING
+) -> AsyncIterator[str]:
+    """Yield the body's non-empty lines, decoded with the requested encoding.
+
+    httpx would otherwise trust the response's declared charset, and the CSV
+    renderer declares `utf-8` even when it sent ISO-8859-1. httpx's decoder
+    substitutes U+FFFD instead of raising on a bad byte, so a mismatch shows up
+    here as mojibake rather than the UnicodeDecodeError the sync client sees.
+    """
+    response.encoding = encoding
     async for line in response.aiter_lines():
         if line:
             yield line
@@ -177,7 +190,11 @@ class VainuAPIBaseClient:
 
     @asynccontextmanager
     async def stream(
-        self, method: http.HTTPMethod, path: str, **kwargs
+        self,
+        method: http.HTTPMethod,
+        path: str,
+        encoding: str = DEFAULT_ENCODING,
+        **kwargs,
     ) -> AsyncIterator[AsyncIterator[str]]:
         """Yield the response body one line at a time, as it arrives.
 
@@ -202,7 +219,7 @@ class VainuAPIBaseClient:
                 _raise_for_status_with_body(response)
                 yield _aiter_lines_from_text(response.text)
             else:
-                yield _aiter_nonempty_lines(response)
+                yield _aiter_nonempty_lines(response, encoding)
         finally:
             await response.aclose()
 
@@ -283,12 +300,15 @@ class VainuAPIBaseClient:
         path = "/v2/companies/async/"
         if isinstance(payload, dict):
             return await self.request_api_async(
-                path=path, method=http.HTTPMethod.POST, payload=payload, format=format
+                path=path,
+                method=http.HTTPMethod.POST,
+                payload=with_encoding(payload, format),
+                format=format,
             )
         if isinstance(payload, str):
             return await self.request_api_async(
                 method=http.HTTPMethod.GET,
-                path=f"{path}{payload}",
+                path=f"{path}{with_encoding(payload, format)}",
                 format=format,
                 payload={},
             )
@@ -314,7 +334,12 @@ class VainuAPIBaseClient:
         """Stream company data line by line (`csv` / `jsonl` only)."""
         ensure_streamable(format)
         method, path, json_body = companies_request(payload, format)
-        async with self.stream(method=method, path=path, json=json_body) as lines:
+        async with self.stream(
+            method=method,
+            path=path,
+            encoding=response_encoding(payload, format),
+            json=json_body,
+        ) as lines:
             yield lines
 
     async def organizations(
@@ -326,7 +351,7 @@ class VainuAPIBaseClient:
             await self.request(
                 method=http.HTTPMethod.POST,
                 path=f"/v3/organizations/?format={format}",
-                json=payload,
+                json=with_encoding(payload, format),
             ),
             format,
         )
@@ -342,7 +367,8 @@ class VainuAPIBaseClient:
         async with self.stream(
             method=http.HTTPMethod.POST,
             path=f"/v3/organizations/?format={format}",
-            json=payload,
+            encoding=response_encoding(payload, format),
+            json=with_encoding(payload, format),
         ) as lines:
             yield lines
 
@@ -354,7 +380,7 @@ class VainuAPIBaseClient:
         return await self.request_api_async(
             method=http.HTTPMethod.POST,
             path="/v3/organizations/async/",
-            payload=payload,
+            payload=with_encoding(payload, format),
             format=format,
         )
 
@@ -378,7 +404,7 @@ class VainuAPIBaseClient:
             await self.request(
                 method=http.HTTPMethod.POST,
                 path=f"/v3/organizations/search/?format={format}",
-                json=payload,
+                json=with_encoding(payload, format),
             ),
             format,
         )
@@ -394,7 +420,8 @@ class VainuAPIBaseClient:
         async with self.stream(
             method=http.HTTPMethod.POST,
             path=f"/v3/organizations/search/?format={format}",
-            json=payload,
+            encoding=response_encoding(payload, format),
+            json=with_encoding(payload, format),
         ) as lines:
             yield lines
 

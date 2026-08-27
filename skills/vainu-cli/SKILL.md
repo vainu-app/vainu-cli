@@ -105,6 +105,11 @@ vainu organizations --payload '{"database": "FI", "query": {...}}'
 - `--format jsonl` and `csv` **stream by default** (line-by-line)
 - `--format json` buffers the full body (organizations/companies only)
 - Signals support `json` and `jsonl` only (no CSV)
+- CSV comes back UTF-8: every CSV request carries `encoding: "utf-8"`, since the API's CSV
+  renderer defaults to ISO-8859-1. `--encoding` (or an `encoding` key in the payload) picks
+  another codec — it is requested, decoded and written in that codec, so
+  `--encoding latin-1 --output legacy.csv` writes latin-1, and `--encoding utf-8-sig` gives
+  Excel its BOM
 - `--output FILE` writes to file; status messages go to stderr
 
 Large result sets: use `*-async` with `--format jsonl --output file.jsonl`.

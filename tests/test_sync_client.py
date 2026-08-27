@@ -693,6 +693,99 @@ class TestVainuAPIKeySyncClientStreaming:
                 pass
 
 
+class TestVainuAPIKeySyncClientCsvEncoding:
+    """CSV is the one format the API renders in a legacy encoding unless asked."""
+
+    # A row that only decodes as UTF-8 once the request asks for it.
+    CSV_TEXT = '"business_id";"name"\r\n"FI14038544";"Tynjälä Kari"\r\n'
+    CSV_LEGACY_BODY = CSV_TEXT.encode("latin-1")
+    PAYLOAD = {"database": "FI", "fields": ["business_id", "name"]}
+
+    @resp.activate
+    def test_stream_organizations_asks_for_utf8(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=csv",
+            body=self.CSV_TEXT.encode(),
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_organizations(payload=self.PAYLOAD, format="csv") as lines:
+            rows = list(lines)
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "utf-8"
+        assert rows == self.CSV_TEXT.splitlines()
+
+    @resp.activate
+    def test_stream_organizations_survives_a_legacy_body(self):
+        """A server that ignores the request must not abort the export mid-row."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=csv",
+            body=self.CSV_LEGACY_BODY,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_organizations(payload=self.PAYLOAD, format="csv") as lines:
+            assert list(lines) == self.CSV_TEXT.splitlines()
+
+    @resp.activate
+    def test_stream_organizations_honours_a_chosen_encoding(self):
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=csv",
+            body=self.CSV_LEGACY_BODY,
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        payload = {**self.PAYLOAD, "encoding": "latin-1"}
+        with client.stream_organizations(payload=payload, format="csv") as lines:
+            rows = list(lines)
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "latin-1"
+        assert rows == self.CSV_TEXT.splitlines()
+
+    @resp.activate
+    def test_stream_jsonl_ignores_a_payload_encoding(self):
+        """The JSON renderers answer in UTF-8 whatever the payload asks for."""
+        resp.add(
+            resp.POST,
+            f"{BASE_URL}/v3/organizations/?format=jsonl",
+            body=JSONL_RESPONSE.encode(),
+        )
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        payload = {**self.PAYLOAD, "encoding": "latin-1"}
+        with client.stream_organizations(payload=payload, format="jsonl") as lines:
+            assert list(lines) == JSONL_RESPONSE.splitlines()
+
+    @resp.activate
+    def test_buffered_organizations_asks_for_utf8(self):
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/?format=csv", body=self.CSV_TEXT)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.organizations(payload=self.PAYLOAD, format="csv")
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "utf-8"
+
+    @resp.activate
+    def test_organizations_search_asks_for_utf8(self):
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/search/?format=csv", body=self.CSV_TEXT)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.organizations_search(payload={"search": "tynjälä"}, format="csv")
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "utf-8"
+
+    @resp.activate
+    def test_stream_companies_query_string_asks_for_utf8(self):
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/", body=self.CSV_LEGACY_BODY)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        with client.stream_companies(payload="?country=FI", format="csv") as lines:
+            assert list(lines) == self.CSV_TEXT.splitlines()
+        assert "encoding=utf-8" in resp.calls[0].request.url
+
+    @resp.activate
+    def test_organizations_async_export_asks_for_utf8(self):
+        """The exported file is written as bytes, so the job itself has to be UTF-8."""
+        resp.add(resp.POST, f"{BASE_URL}/v3/organizations/async/", json=ASYNC_JOB_SUBMIT_RESPONSE)
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/async/job123/", json=ASYNC_JOB_COMPLETED)
+        client = VainuAPIKeySyncClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        client.organizations_async(payload=self.PAYLOAD, format="csv")
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "utf-8"
+
+
 # ── VainuOAuthSyncClient ─────────────────────────────────────────────────────
 
 
