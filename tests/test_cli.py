@@ -1639,6 +1639,225 @@ class TestStreaming:
         assert result.output.splitlines() == JSONL_STREAM_LINES
 
 
+# ── --encoding ────────────────────────────────────────────────────────────────
+
+
+class TestEncoding:
+    CSV_TEXT = '"business_id";"name"\r\n"FI14038544";"Tynjälä Kari"\r\n'
+    ORGANIZATIONS_CSV_URL = f"{BASE_URL}/v3/organizations/?format=csv"
+
+    @resp.activate
+    def test_csv_asks_for_utf8_without_the_flag(self, runner):
+        resp.add(resp.POST, self.ORGANIZATIONS_CSV_URL, body=self.CSV_TEXT.encode())
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "organizations", "--payload", "-", "--format", "csv"],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "utf-8"
+        assert result.output.splitlines() == self.CSV_TEXT.splitlines()
+
+    @resp.activate
+    def test_flag_picks_the_codec_and_decodes_with_it(self, runner):
+        resp.add(resp.POST, self.ORGANIZATIONS_CSV_URL, body=self.CSV_TEXT.encode("latin-1"))
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "csv",
+                "--encoding",
+                "latin-1",
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "latin-1"
+        # Rows fetched as latin-1 are written as latin-1 — re-encoding them to
+        # UTF-8 would make the flag a no-op for anyone who wants legacy bytes.
+        assert result.stdout_bytes.decode("latin-1").splitlines() == self.CSV_TEXT.splitlines()
+
+    @resp.activate
+    def test_flag_overrides_the_payload(self, runner):
+        resp.add(resp.POST, self.ORGANIZATIONS_CSV_URL, body=self.CSV_TEXT.encode("latin-1"))
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                '{"query": {}, "encoding": "utf-8"}',
+                "--format",
+                "csv",
+                "--encoding",
+                "latin-1",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert json.loads(resp.calls[0].request.body)["encoding"] == "latin-1"
+
+    @resp.activate
+    def test_companies_query_string_carries_the_codec(self, runner):
+        resp.add(resp.GET, f"{BASE_URL}/v2/companies/", body=self.CSV_TEXT.encode("latin-1"))
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "companies",
+                "--query",
+                "?country=FI",
+                "--format",
+                "csv",
+                "--encoding",
+                "latin-1",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "encoding=latin-1" in resp.calls[0].request.url
+        assert result.stdout_bytes.decode("latin-1").splitlines() == self.CSV_TEXT.splitlines()
+
+    @resp.activate
+    def test_json_format_ignores_the_flag(self, runner):
+        """`encoding` is a CSV-only knob; the JSON renderers answer in UTF-8 regardless."""
+        resp.add(
+            resp.POST, f"{BASE_URL}/v3/organizations/?format=json", json=ORGANIZATIONS_RESPONSE
+        )
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--encoding",
+                "latin-1",
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert "encoding" not in json.loads(resp.calls[0].request.body)
+
+    def test_unknown_codec_is_rejected(self, runner):
+        """The API answers an unknown codec with an empty 200 — catch the typo here."""
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "csv",
+                "--encoding",
+                "utf8mb4",
+            ],
+            input='{"query": {}}',
+        )
+        assert result.exit_code != 0
+        assert "not a known codec" in result.output
+
+    def test_a_wide_codec_is_rejected(self, runner):
+        """utf-16 would survive the request and then decode every row but the first wrong."""
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "csv",
+                "--encoding",
+                "utf-16",
+            ],
+            input='{"query": {}}',
+        )
+        assert result.exit_code != 0
+        assert "more than one byte" in result.output
+
+    @resp.activate
+    def test_output_file_is_written_in_the_chosen_codec(self, runner, tmp_path):
+        resp.add(resp.POST, self.ORGANIZATIONS_CSV_URL, body=self.CSV_TEXT.encode("latin-1"))
+        output_file = tmp_path / "legacy.csv"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "csv",
+                "--encoding",
+                "latin-1",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert (
+            output_file.read_bytes() == b'"business_id";"name"\n"FI14038544";"Tynj\xe4l\xe4 Kari"\n'
+        )
+
+    @resp.activate
+    def test_output_file_defaults_to_utf8(self, runner, tmp_path):
+        """Never the platform locale, which is not UTF-8 on Windows."""
+        resp.add(resp.POST, self.ORGANIZATIONS_CSV_URL, body=self.CSV_TEXT.encode())
+        output_file = tmp_path / "rows.csv"
+        result = runner.invoke(
+            main,
+            [
+                "--api-key",
+                "test-key",
+                "organizations",
+                "--payload",
+                "-",
+                "--format",
+                "csv",
+                "--output",
+                str(output_file),
+            ],
+            input='{"query": {}}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0
+        assert output_file.read_text(encoding="utf-8").splitlines() == self.CSV_TEXT.splitlines()
+
+    def test_the_flag_is_offered_on_the_csv_commands(self, runner):
+        for command in (
+            "companies",
+            "companies-async",
+            "organizations",
+            "organizations-async",
+            "organizations-search",
+        ):
+            result = runner.invoke(main, [command, "--help"], catch_exceptions=False)
+            assert "--encoding" in result.output, command
+
+    def test_signals_have_no_encoding_flag(self, runner):
+        """Signals render json/jsonl only, so there is no codec to pick."""
+        result = runner.invoke(main, ["signals-news", "--help"], catch_exceptions=False)
+        assert "--encoding" not in result.output
+
+
 # ── --version ─────────────────────────────────────────────────────────────────
 
 
