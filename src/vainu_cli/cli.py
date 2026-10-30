@@ -44,6 +44,7 @@ from vainu_cli.auth.commands import (
 )
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
 from vainu_cli.common import (
+    DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     DEFAULT_ENCODING,
     DEFAULT_TIMEOUT_SECONDS,
     ENRICHMENT_RESPONSE_FORMATS,
@@ -467,7 +468,10 @@ def _option_poll_interval(func: F) -> F:
 
 def _option_timeout(func: F) -> F:
     return click.option(
-        "--timeout", default=14400, show_default=True, help="Max seconds to wait for async job."
+        "--timeout",
+        type=int,
+        default=DEFAULT_ASYNC_MAX_WAIT_SECONDS,
+        help="Max seconds to wait for async job.  [default: no limit]",
     )(func)
 
 
@@ -666,6 +670,7 @@ def companies_export(
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
         client.ASYNC_POLL_INTERVAL = poll_interval
+        client._async_max_wait_seconds = timeout
         try:
             async_result = await client.companies_async(payload=payload, format=fmt)
             downloaded = await async_result.download_to_file(output)
@@ -768,6 +773,7 @@ def organizations_export(
     async def _run() -> str | None:
         client = _make_async_client(config, language=language)
         client.ASYNC_POLL_INTERVAL = poll_interval
+        client._async_max_wait_seconds = timeout
         try:
             async_result = await client.organizations_async(payload=payload, format=fmt)
             downloaded = await async_result.download_to_file(output)

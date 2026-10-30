@@ -320,7 +320,7 @@ Submits an async export job, polls until complete, and downloads the result.
 --encoding TEXT        Codec for --format csv (default: utf-8)
 --output FILE          Output file (required)
 --poll-interval INT    Polling interval in seconds (default: 3)
---timeout INT          Max wait seconds (default: 14400)
+--timeout INT          Max wait seconds (default: no limit)
 ```
 
 ### `vainu organizations` / `vainu organizations-async`
@@ -399,7 +399,7 @@ stripped before sending, because the count endpoint rejects it with
 --max-cache-age INT  Recount if the cached count is older than this many seconds
 --wait/--no-wait     Keep re-requesting until the count is ready (default: --wait)
 --poll-interval INT  Polling interval in seconds (default: 3)
---timeout INT        Max wait seconds (default: 14400)
+--timeout INT        Max wait seconds (default: no limit)
 --language TEXT      Accept-Language header
 --output FILE        Write to file instead of stdout
 ```
