@@ -222,7 +222,10 @@ class VainuAPIBaseClient:
         started_at = time.monotonic()
         consecutive_errors = 0
         while True:
-            if time.monotonic() - started_at > self._async_max_wait_seconds:
+            if (
+                self._async_max_wait_seconds is not None
+                and time.monotonic() - started_at > self._async_max_wait_seconds
+            ):
                 raise TimeoutError(
                     f"Async job polling exceeded {self._async_max_wait_seconds}s "
                     f"for link {link_to_poll}"

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Async job polling no longer gives up on its own: it waits for as long as the job runs, so a
+  full-field export of around a million companies can finish. Pass `--timeout` to set a limit.
+  This applies to `companies-async`, `organizations-async` and `organizations-count`, and to
+  both Python clients (`ASYNC_MAX_WAIT_SECONDS` is now `None`).
+
+### Fixed
+
+- `--timeout` on `companies-async` and `organizations-async` was accepted but ignored; polling
+  always stopped at the built-in cap. It now sets how long the export waits.
+
 ## [0.1.2] - 2026-08-27
 
 ### Added

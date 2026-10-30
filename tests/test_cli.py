@@ -9,6 +9,8 @@ import responses as resp
 import respx
 from click.testing import CliRunner
 from conftest import (
+    ASYNC_JOB_PROCESS,
+    ASYNC_JOB_SUBMIT_RESPONSE,
     BASE_URL,
     COMPANIES_RESPONSE,
     CSV_RESPONSE,
@@ -32,7 +34,7 @@ from conftest import (
 )
 
 from vainu_cli.cli import main
-from vainu_cli.common import DEFAULT_TIMEOUT_SECONDS
+from vainu_cli.common import DEFAULT_ASYNC_MAX_WAIT_SECONDS, DEFAULT_TIMEOUT_SECONDS
 
 
 @pytest.fixture
@@ -586,6 +588,51 @@ class TestOrganizationsExport:
         assert "Result exists in result_url:" in result.output
 
 
+class TestAsyncExportTimeout:
+    """`--timeout` must cap the poll loop, not just appear in `--help`."""
+
+    @pytest.mark.parametrize(
+        ("submit_method", "submit_url", "command"),
+        [
+            (
+                "GET",
+                f"{BASE_URL}/v2/companies/async/?country=FI&async_format=json",
+                ["companies-async", "--query", "?country=FI"],
+            ),
+            (
+                "POST",
+                f"{BASE_URL}/v3/organizations/async/?async_format=json",
+                ["organizations-async", "--payload", "-"],
+            ),
+        ],
+    )
+    def test_gives_up_after_timeout(self, runner, tmp_path, submit_method, submit_url, command):
+        with respx.mock:
+            respx.request(submit_method, submit_url).mock(
+                return_value=httpx.Response(200, json=ASYNC_JOB_SUBMIT_RESPONSE)
+            )
+            respx.get(ASYNC_JOB_SUBMIT_RESPONSE["link"]).mock(
+                return_value=httpx.Response(200, json=ASYNC_JOB_PROCESS)
+            )
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    *command,
+                    "--output",
+                    str(tmp_path / "export.json"),
+                    "--poll-interval",
+                    "0",
+                    "--timeout",
+                    "0",
+                ],
+                input='{"query": {}}',
+            )
+        assert isinstance(result.exception, TimeoutError), result.output
+        assert "exceeded 0s" in str(result.exception)
+
+
 # ── organizations fuzzy search ────────────────────────────────────────────────
 
 
@@ -1097,7 +1144,7 @@ class TestOrganizationsCount:
         assert result.exit_code == 0
         assert json.loads(result.output)["count"] == 180086
         instance.organizations_count.assert_awaited_once_with(
-            payload=ANY, wait=True, poll_interval=3, max_wait_seconds=14400
+            payload=ANY, wait=True, poll_interval=3, max_wait_seconds=DEFAULT_ASYNC_MAX_WAIT_SECONDS
         )
 
 

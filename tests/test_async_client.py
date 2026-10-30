@@ -221,6 +221,29 @@ class TestVainuAPIKeyClientCompaniesAsync:
         await client.close()
 
     @respx.mock
+    async def test_polls_without_a_limit_by_default(self, monkeypatch):
+        """A job may run for days; without a limit set, only the job ends the loop."""
+        respx.get(f"{BASE_URL}/v2/companies/async/").mock(
+            return_value=httpx.Response(200, json=ASYNC_JOB_SUBMIT_RESPONSE)
+        )
+        respx.get(f"{BASE_URL}/v2/companies/async/job123/").mock(
+            side_effect=[
+                httpx.Response(200, json=ASYNC_JOB_PROCESS),
+                httpx.Response(200, json=ASYNC_JOB_PROCESS),
+                httpx.Response(200, json=ASYNC_JOB_COMPLETED),
+            ]
+        )
+        # Each clock reading lands a day later than the one before.
+        ticks = iter(range(0, 100 * 86_400, 86_400))
+        monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+
+        client = VainuAPIKeyClient(api_key="test-key")
+        client.ASYNC_POLL_INTERVAL = 0
+        result = await client.companies_async(payload="?country=FI")
+        assert result.download_url == ASYNC_JOB_COMPLETED["download_link"]
+        await client.close()
+
+    @respx.mock
     async def test_gateway_timeout_while_polling_is_retried(self):
         """A 504 from the load balancer says nothing about the job behind it."""
         respx.get(f"{BASE_URL}/v2/companies/async/").mock(
