@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 
 import requests
 
+from vainu_cli._download import Downloader, download_export
 from vainu_cli.auth.storage import ClientCredentialsCache
 from vainu_cli.common import (
     DEFAULT_ASYNC_MAX_WAIT_SECONDS,
@@ -23,6 +24,7 @@ from vainu_cli.common import (
     AsyncJobState,
     LineDecoder,
     ResponseFormat,
+    async_jobs_path,
     companies_request,
     count_is_pending,
     count_payload,
@@ -42,6 +44,7 @@ class AsyncResult:
     download_url: str | None
     duration: int
     result_url: str | None = None
+    job_id: str | None = None
 
     def json(self) -> dict:
         if not self.download_url:
@@ -53,22 +56,25 @@ class AsyncResult:
         response.raise_for_status()
         return response.json()
 
-    def download_to_file(self, output_path: str) -> bool:
+    def download_to_file(
+        self,
+        output_path: str,
+        *,
+        downloader: Downloader = Downloader.PYTHON,
+        keep_gzip: bool = False,
+    ) -> bool:
+        """Download the export to a file, resuming after interruptions (see `download_export`)."""
         if self.result_url and not self.download_url:
             logger.info("Result exists in result_url: %s", self.result_url)
             return False
         if not self.download_url:
             raise RuntimeError("Async result is missing both download_url and result_url")
-        logger.info("Downloading file to %s", self.download_url)
-        with requests.get(
-            self.download_url, stream=True, timeout=DEFAULT_TIMEOUT_SECONDS
-        ) as response:
-            response.raise_for_status()
-            with open(output_path, "wb") as output_file:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        output_file.write(chunk)
-        logger.info("Downloaded file: %s", output_path)
+        download_export(
+            downloader=downloader,
+            keep_gzip=keep_gzip,
+            output=output_path,
+            url=self.download_url,
+        )
         return True
 
 
@@ -257,6 +263,7 @@ class VainuAPIBaseClient:
                     download_url=poll_data.get("download_link"),
                     duration=poll_data.get("duration"),
                     result_url=payload.get("result_url") if isinstance(payload, dict) else None,
+                    job_id=poll_data.get("job_id"),
                 )
             if status not in {AsyncJobState.ACCEPTED, AsyncJobState.PROCESS}:
                 raise RuntimeError(f"Async job failed with state {status!r}: {poll_data}")
@@ -553,6 +560,28 @@ class VainuAPIBaseClient:
             ),
             DEFAULT_RESPONSE_FORMAT,
         )
+
+    def async_jobs(
+        self,
+        *,
+        job_types: list[str],
+        limit: int,
+        states: list[str],
+    ) -> list | dict:
+        """Returns the user's async jobs, newest first; a 403/404 error body as a dict."""
+        response = self.request(
+            method=http.HTTPMethod.GET,
+            path=async_jobs_path(job_types=job_types, limit=limit, states=states),
+        )
+        return response.json()
+
+    def async_job(self, *, job_id: str, job_type: str) -> dict:
+        """Returns one async job of the given type; a 403/404 error body when there is none."""
+        response = self.request(
+            method=http.HTTPMethod.GET,
+            path=f"/v2/async_result/{job_type}/{job_id}/",
+        )
+        return response.json()
 
     def organization_lists(
         self,

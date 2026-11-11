@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `vainu async-jobs` lists your `companies-async` / `organizations-async` jobs from the last 90
+  days (`--type`, `--state`, `--limit`), so a job left running after `--timeout` or a lost
+  connection can be found again. Needs `vainu login`; the API rejects an API key for it.
+- `vainu async-jobs download JOB_ID --output FILE` downloads a finished job's file without
+  re-running the export. Works with an API key too.
+- `--downloader curl` and `--keep-gzip` on `companies-async` and `organizations-async`: native
+  curl for huge files, and keeping the export gzip-compressed (several times smaller).
+- `AsyncResult.job_id` in both Python clients.
+
 ### Changed
 
+- Export downloads resume after a dropped connection. The stored gzip bytes go to
+  `<output>.<etag>.part` and are decompressed and checksum-verified into `--output` only once
+  complete; re-running the command (or `vainu async-jobs download`) continues an interrupted
+  part. A failed download prints the `vainu async-jobs download` command to resume it.
+- The async client's `download_to_file` no longer needs `curl` installed; it downloads in Python
+  unless `downloader=Downloader.CURL` is passed.
 - Async job polling no longer gives up on its own: it waits for as long as the job runs, so a
   full-field export of around a million companies can finish. Pass `--timeout` to set a limit.
   This applies to `companies-async`, `organizations-async` and `organizations-count`, and to

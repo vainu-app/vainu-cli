@@ -70,6 +70,8 @@ Optional: `VAINU_BASE_URL` to override the API host.
 | `vainu organizations-search` | v3 fuzzy search | `--search TERM` — name/business id/domain → rows |
 | `vainu organizations-async` | v3 async export | `--payload` + required `--output` |
 | `vainu organizations-count` | v3 count | `--payload` / `--list` — count only, no rows |
+| `vainu async-jobs` | async job list | login/JWT/OAuth (not API key) — your `*-async` jobs, `--type` / `--state` / `--limit` |
+| `vainu async-jobs download ID` | async job result | `--output FILE` — download a finished `*-async` job; works with an API key too; re-run resumes |
 | `vainu fields organizations` | v3 GET metadata | filterable vs output field catalog |
 | `vainu signals-news` | v3 signals | `--payload` JSON, OAuth/JWT/login |
 | `vainu signals-data-changes` | v3 signals | `--payload` JSON, OAuth/JWT/login |
@@ -113,6 +115,11 @@ vainu organizations --payload '{"database": "FI", "query": {...}}'
 - `--output FILE` writes to file; status messages go to stderr
 
 Large result sets: use `*-async` with `--format jsonl --output file.jsonl`.
+Exports download resumably (a dropped connection continues from where it stopped). For huge
+files add `--downloader curl` (native curl, lowest overhead) and/or `--keep-gzip --output
+file.jsonl.gz` (keeps the compressed file, several times smaller; read with `zcat`). If a
+download still fails, the error prints `vainu async-jobs download JOB_ID --output FILE`, which
+resumes it without re-running the export.
 
 ## Reference files
 

@@ -2,7 +2,7 @@
 
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -39,6 +39,7 @@ from vainu_cli._async_client import (
     VainuJWTAPIClient,
     VainuOAuthAPIClient,
 )
+from vainu_cli._download import Downloader
 
 # ── VainuAPIKeyClient ────────────────────────────────────────────────────────
 
@@ -1005,54 +1006,34 @@ class TestAsyncResult:
         data = await result.json()
         assert data["count"] == 1
 
-    async def test_download_to_file_calls_curl(self, tmp_path):
-        out = tmp_path / "out.json"
+    async def test_download_to_file_runs_the_shared_download_in_a_thread(self, tmp_path):
+        out = tmp_path / "out.jsonl"
         result = AsyncResult(download_url="https://downloads.vainu.io/result.json", duration=1)
 
-        mock_proc = MagicMock()
-        mock_proc.wait = AsyncMock(return_value=None)
-        mock_proc.returncode = 0
+        with patch("vainu_cli._async_client.download_export") as download:
+            downloaded = await result.download_to_file(
+                str(out), downloader=Downloader.CURL, keep_gzip=True
+            )
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
-            await result.download_to_file(str(out))
-
-        mock_exec.assert_called_once_with(
-            "curl",
-            "-L",
-            "-s",
-            "-f",
-            "-o",
-            str(out),
-            "--compressed",
-            "https://downloads.vainu.io/result.json",
+        assert downloaded is True
+        download.assert_called_once_with(
+            downloader=Downloader.CURL,
+            keep_gzip=True,
+            output=str(out),
+            url="https://downloads.vainu.io/result.json",
         )
 
-    async def test_download_to_file_raises_on_curl_error(self, tmp_path):
-        out = tmp_path / "out.json"
-        result = AsyncResult(download_url="https://downloads.vainu.io/result.json", duration=1)
-
-        mock_proc = MagicMock()
-        mock_proc.wait = AsyncMock(return_value=None)
-        mock_proc.returncode = 1  # curl failure
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            with pytest.raises(RuntimeError, match="curl exited"):
-                await result.download_to_file(str(out))
-
-    async def test_download_to_file_raises_when_curl_missing(self, tmp_path):
-        out = tmp_path / "out.json"
-        result = AsyncResult(download_url="https://downloads.vainu.io/result.json", duration=1)
-
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
-            with pytest.raises(RuntimeError, match="curl is not installed"):
-                await result.download_to_file(str(out))
+    async def test_download_to_file_raises_without_any_url(self, tmp_path):
+        result = AsyncResult(download_url=None, duration=1)
+        with pytest.raises(RuntimeError, match="missing both download_url and result_url"):
+            await result.download_to_file(str(tmp_path / "out.jsonl"))
 
     async def test_download_to_file_skips_when_only_result_url_present(self, tmp_path):
         out = tmp_path / "out.json"
         result = AsyncResult(download_url=None, duration=1, result_url="https://api/v3/result/123")
 
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
+        with patch("vainu_cli._async_client.download_export") as download:
             downloaded = await result.download_to_file(str(out))
 
         assert downloaded is False
-        mock_exec.assert_not_called()
+        download.assert_not_called()

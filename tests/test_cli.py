@@ -1,7 +1,9 @@
 """CLI integration tests using Click's CliRunner."""
 
+import gzip
 import json
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -21,6 +23,7 @@ from conftest import (
     JSONL_STREAM_LINES,
     JSONL_STREAM_RESPONSE,
     JWT_REFRESH_URL,
+    JWT_TOKEN_RESPONSE,
     ORGANIZATION_LISTS_RESPONSE,
     ORGANIZATIONS_COUNT_ERROR_RESPONSE,
     ORGANIZATIONS_COUNT_RESPONSE,
@@ -31,8 +34,10 @@ from conftest import (
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
     STATIC_LIST_RESPONSE,
+    add_fake_s3,
 )
 
+from vainu_cli._download import Downloader
 from vainu_cli.cli import main
 from vainu_cli.common import DEFAULT_ASYNC_MAX_WAIT_SECONDS, DEFAULT_TIMEOUT_SECONDS
 
@@ -316,7 +321,46 @@ class TestCompaniesExport:
             )
 
         assert result.exit_code == 0
-        async_result_mock.download_to_file.assert_called_once_with(str(out))
+        async_result_mock.download_to_file.assert_called_once_with(
+            str(out), downloader=Downloader.PYTHON, keep_gzip=False
+        )
+
+    def test_failed_download_points_at_async_jobs_download(self, runner, tmp_path):
+        out = tmp_path / "export.jsonl"
+        async_result_mock = MagicMock()
+        async_result_mock.job_id = "6ae47e3305a0c8094ef8c4e5"
+        async_result_mock.download_to_file = AsyncMock(
+            side_effect=RuntimeError("Download incomplete after 5 attempts.")
+        )
+
+        with patch("vainu_cli.cli.VainuAPIKeyClient") as MockClient:
+            instance = MockClient.return_value
+            instance.companies_async = AsyncMock(return_value=async_result_mock)
+            instance.close = AsyncMock()
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "companies-async",
+                    "--query",
+                    "?country=FI",
+                    "--output",
+                    str(out),
+                    "--downloader",
+                    "curl",
+                    "--keep-gzip",
+                ],
+            )
+
+        assert result.exit_code == 1, result.output
+        assert (
+            "Download incomplete after 5 attempts. Resume with: vainu async-jobs download "
+            f"6ae47e3305a0c8094ef8c4e5 --output {out}"
+        ) in result.output.replace("\n", " ")
+        async_result_mock.download_to_file.assert_awaited_once_with(
+            str(out), downloader=Downloader.CURL, keep_gzip=True
+        )
 
     def test_export_requires_output(self, runner):
         result = runner.invoke(
@@ -1960,6 +2004,232 @@ class TestOAuthCLI:
         )
         assert result.exit_code != 0
         assert any(kw in result.output for kw in ("client-id", "client_id", "OAuth"))
+
+
+# ── async jobs ────────────────────────────────────────────────────────────────
+
+_ASYNC_JOBS_URL = f"{BASE_URL}/poll_async_processes/"
+_ASYNC_JOBS_RESPONSE = [
+    {
+        "id": "6729c0ffee0123456789abcd",
+        "job_id": "6729c0ffee0123456789abcd",
+        "type": "list-organizations-async-api",
+        "state": "process",
+        "progress": 40,
+        "progress_max": 100,
+        "created": "2026-11-05T10:00:00Z",
+        "finished": None,
+        "download_link": None,
+        "error_msg": None,
+    },
+]
+_JWT_ARGS = ["--auth-method", "jwt", "--jwt-token", "refresh-token"]
+
+
+def _async_jobs_query(url: str) -> dict[str, list[str]]:
+    return parse_qs(urlsplit(url).query)
+
+
+class TestAsyncJobs:
+    def test_api_key_fails_before_any_request(self, runner):
+        with resp.RequestsMock(assert_all_requests_are_fired=False) as mocked:
+            result = runner.invoke(main, ["--api-key", "test-key", "async-jobs"])
+        assert result.exit_code != 0, result.output
+        assert "vainu login" in result.output
+        assert len(mocked.calls) == 0
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--type", "signals"],
+            ["--state", "running"],
+            ["--limit", "0"],
+            ["--limit", "1001"],
+        ],
+    )
+    def test_invalid_option_is_a_usage_error(self, runner, args):
+        result = runner.invoke(main, [*_JWT_ARGS, "async-jobs", *args])
+        assert result.exit_code == 2, result.output
+
+    @resp.activate
+    def test_forbidden_body_becomes_an_error(self, runner):
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
+        resp.add(
+            resp.GET,
+            _ASYNC_JOBS_URL,
+            json={"detail": "You do not have permission to perform this action."},
+            status=403,
+        )
+        result = runner.invoke(main, [*_JWT_ARGS, "async-jobs"])
+        assert result.exit_code == 1, result.output
+        assert "vainu login" in result.output
+        assert "You do not have permission" in result.output
+
+    @resp.activate
+    def test_defaults_to_every_cli_job_type(self, runner):
+        resp.add(resp.POST, JWT_REFRESH_URL, json=JWT_TOKEN_RESPONSE)
+        resp.add(resp.GET, _ASYNC_JOBS_URL, json=_ASYNC_JOBS_RESPONSE)
+        result = runner.invoke(main, [*_JWT_ARGS, "async-jobs"], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == _ASYNC_JOBS_RESPONSE
+        assert _async_jobs_query(resp.calls[-1].request.url) == {
+            "type": ["public-companies-async-api", "list-organizations-async-api"],
+            "limit": ["10"],
+        }
+
+    @respx.mock
+    def test_async_mode_narrows_by_type_and_state(self, runner):
+        respx.post(JWT_REFRESH_URL).mock(return_value=httpx.Response(200, json=JWT_TOKEN_RESPONSE))
+        route = respx.get(url__startswith=_ASYNC_JOBS_URL).mock(
+            return_value=httpx.Response(200, json=_ASYNC_JOBS_RESPONSE)
+        )
+        result = runner.invoke(
+            main,
+            [
+                *_JWT_ARGS,
+                "--async-mode",
+                "async-jobs",
+                "--type",
+                "organizations",
+                "--state",
+                "process",
+                "--state",
+                "accepted",
+                "--limit",
+                "50",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == _ASYNC_JOBS_RESPONSE
+        assert _async_jobs_query(str(route.calls.last.request.url)) == {
+            "type": ["list-organizations-async-api"],
+            "state": ["process", "accepted"],
+            "limit": ["50"],
+        }
+
+
+_JOB_ID = "6ae47e3305a0c8094ef8c4e5"
+_ORGANIZATIONS_JOB_URL = f"{BASE_URL}/v2/async_result/list-organizations-async-api/{_JOB_ID}/"
+_COMPANIES_JOB_URL = f"{BASE_URL}/v2/async_result/public-companies-async-api/{_JOB_ID}/"
+_JOB_NOT_FOUND = {
+    "detail": "No UserAsyncProcess matches the given query.",
+    "error_code": "NOT_FOUND",
+    "status_code": 404,
+}
+_EXPORT_URL = f"https://vainu-exports.s3.amazonaws.com/u/{_JOB_ID}.jsonl?Signature=abc"
+_COMPLETED_JOB = {
+    "id": _JOB_ID,
+    "job_id": _JOB_ID,
+    "state": "completed",
+    "download_link": _EXPORT_URL,
+    "duration": 318.54,
+}
+_EXPORT_BODY = b'{"business_id": "FI01320292"}\n{"business_id": "FI99999999"}\n'
+
+
+class TestAsyncJobsDownload:
+    @resp.activate
+    def test_unknown_job_fails_without_writing(self, runner, tmp_path):
+        resp.add(resp.GET, _ORGANIZATIONS_JOB_URL, json=_JOB_NOT_FOUND, status=404)
+        resp.add(resp.GET, _COMPANIES_JOB_URL, json=_JOB_NOT_FOUND, status=404)
+        out = tmp_path / "export.jsonl"
+        result = runner.invoke(
+            main, ["--api-key", "test-key", "async-jobs", "download", _JOB_ID, "--output", str(out)]
+        )
+        assert result.exit_code == 1, result.output
+        assert f"No companies-async or organizations-async job `{_JOB_ID}` found" in result.output
+        assert "No UserAsyncProcess matches" in result.output
+        assert not out.exists()
+
+    @pytest.mark.parametrize(
+        ("job", "message"),
+        [
+            (
+                {"id": _JOB_ID, "state": "process", "download_link": None},
+                "is `process`, nothing to download yet",
+            ),
+            (
+                {"id": _JOB_ID, "state": "failure", "download_link": None},
+                "is `failure`, nothing to download yet",
+            ),
+            (
+                {"id": _JOB_ID, "state": "completed", "download_link": None},
+                "is completed but has no download link",
+            ),
+        ],
+    )
+    @resp.activate
+    def test_undownloadable_job_fails_without_writing(self, runner, tmp_path, job, message):
+        resp.add(resp.GET, _ORGANIZATIONS_JOB_URL, json=job)
+        out = tmp_path / "export.jsonl"
+        result = runner.invoke(
+            main, ["--api-key", "test-key", "async-jobs", "download", _JOB_ID, "--output", str(out)]
+        )
+        assert result.exit_code == 1, result.output
+        assert message in result.output
+        assert not out.exists()
+
+    @resp.activate
+    def test_interrupted_download_says_rerun_resumes(self, runner, tmp_path):
+        resp.add(resp.GET, _ORGANIZATIONS_JOB_URL, json=_COMPLETED_JOB)
+        data = gzip.compress(_EXPORT_BODY * 50)
+        add_fake_s3(_EXPORT_URL, data, gzipped=True, max_body=len(data) // 10)
+        out = tmp_path / "export.jsonl"
+        result = runner.invoke(
+            main, ["--api-key", "test-key", "async-jobs", "download", _JOB_ID, "--output", str(out)]
+        )
+        assert result.exit_code == 1, result.output
+        assert "Re-run the same command to continue." in result.output
+        assert not out.exists()
+
+    def test_output_is_required(self, runner):
+        result = runner.invoke(main, ["--api-key", "test-key", "async-jobs", "download", _JOB_ID])
+        assert result.exit_code == 2, result.output
+
+    @resp.activate
+    def test_falls_back_to_companies_and_downloads_with_api_key(self, runner, tmp_path):
+        resp.add(resp.GET, _ORGANIZATIONS_JOB_URL, json=_JOB_NOT_FOUND, status=404)
+        resp.add(resp.GET, _COMPANIES_JOB_URL, json=_COMPLETED_JOB)
+        add_fake_s3(_EXPORT_URL, gzip.compress(_EXPORT_BODY), gzipped=True)
+        out = tmp_path / "export.jsonl"
+        result = runner.invoke(
+            main,
+            ["--api-key", "test-key", "async-jobs", "download", _JOB_ID, "--output", str(out)],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+        assert out.read_bytes() == _EXPORT_BODY
+        assert f"Export saved to {out}" in result.output
+
+    @respx.mock
+    def test_async_mode_downloads_the_link(self, runner, tmp_path):
+        respx.get(_ORGANIZATIONS_JOB_URL).mock(
+            return_value=httpx.Response(200, json=_COMPLETED_JOB)
+        )
+        out = tmp_path / "export.jsonl"
+        with patch(
+            "vainu_cli.cli.AsyncResult.download_to_file", new_callable=AsyncMock
+        ) as download:
+            result = runner.invoke(
+                main,
+                [
+                    "--api-key",
+                    "test-key",
+                    "--async-mode",
+                    "async-jobs",
+                    "download",
+                    _JOB_ID,
+                    "--output",
+                    str(out),
+                    "--downloader",
+                    "curl",
+                    "--keep-gzip",
+                ],
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0, result.output
+        download.assert_awaited_once_with(str(out), downloader=Downloader.CURL, keep_gzip=True)
 
 
 # ── lists ─────────────────────────────────────────────────────────────────────
