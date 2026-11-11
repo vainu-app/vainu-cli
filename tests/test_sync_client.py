@@ -1,5 +1,6 @@
 """Unit tests for the synchronous Vainu client."""
 
+import gzip
 import json
 import time
 
@@ -34,6 +35,7 @@ from conftest import (
     SIGNALS_JSONL_RESPONSE,
     SIGNALS_NEWS_RESPONSE,
     STATIC_LIST_RESPONSE,
+    add_fake_s3,
 )
 
 from vainu_cli._sync_client import (
@@ -1016,17 +1018,12 @@ class TestAsyncResult:
         assert data["count"] == 1
 
     @resp.activate
-    def test_download_to_file_writes_bytes(self, tmp_path):
+    def test_download_to_file_gunzips_the_export(self, tmp_path):
         content = b'{"result":[]}'
-        resp.add(
-            resp.GET,
-            "https://downloads.vainu.io/result.json",
-            body=content,
-            stream=True,
-        )
+        add_fake_s3("https://downloads.vainu.io/result.json", gzip.compress(content), gzipped=True)
         out = tmp_path / "out.json"
         result = AsyncResult(download_url="https://downloads.vainu.io/result.json", duration=1)
-        result.download_to_file(str(out))
+        assert result.download_to_file(str(out)) is True
         assert out.read_bytes() == content
 
     def test_download_to_file_skips_when_only_result_url_present(self, tmp_path):

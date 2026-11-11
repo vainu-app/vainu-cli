@@ -891,12 +891,26 @@ Same methods as the async clients but blocking (no `await`).
 ```python
 result.download_url          # URL of the exported file
 result.duration              # Job duration in seconds
+result.job_id                # Job id, for `vainu async-jobs download`
 await result.json()          # Download and parse as dict (async)
-await result.download_to_file(path)  # Download via curl (async)
+await result.download_to_file(path)  # Download to a file (async)
 
 result.json()                # Download and parse as dict (sync)
-result.download_to_file(path)        # Download via streaming requests (sync)
+result.download_to_file(path)        # Download to a file (sync)
 ```
+
+`download_to_file` fetches the export as stored (exports are kept gzip-compressed, several
+times smaller than the decoded file) into `<path>.<etag>.part`, resumes with byte ranges after
+a dropped connection, then decompresses into `path`, verifying the gzip checksum. Nothing is
+written to `path` until the whole file has arrived. Options:
+
+- `downloader=Downloader.CURL` uses the native `curl` binary instead of Python (`Downloader`
+  is in `vainu_cli._download`).
+- `keep_gzip=True` saves the compressed bytes as-is; name the file `*.gz` and read it with
+  `zcat`.
+
+An interrupted download leaves its `.part` file; calling `download_to_file` again with the same
+`path` resumes it.
 
 Search methods return parsed JSON only when `format="json"`. For `format="csv"` and
 `format="jsonl"`, they return the raw response text so the caller can write or stream it

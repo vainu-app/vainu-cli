@@ -1,6 +1,7 @@
 """Shared test fixtures."""
 
 import pytest
+import responses as resp
 from click.testing import CliRunner
 
 BASE_URL = "https://api.vainu.io/api"
@@ -311,3 +312,37 @@ DYNAMIC_LIST_RESPONSE = {
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
+
+
+def add_fake_s3(
+    url: str,
+    data: bytes,
+    *,
+    gzipped: bool = False,
+    max_body: int | None = None,
+    ranges_supported: bool = True,
+) -> list[str | None]:
+    """Serves `data` at `url` the way S3 serves an export; returns each request's Range.
+
+    `max_body` cuts every response short, as a dropped connection would, while still
+    announcing the full Content-Length.
+    """
+    ranges: list[str | None] = []
+
+    def _callback(request):
+        header = request.headers.get("Range")
+        ranges.append(header)
+        start, end, status = 0, len(data) - 1, 200
+        if header and ranges_supported:
+            first, _, last = header.removeprefix("bytes=").partition("-")
+            start, end, status = int(first), int(last) if last else len(data) - 1, 206
+        body = data[start : end + 1]
+        headers = {"ETag": '"fedab521270c-4"', "Content-Length": str(len(body))}
+        if status == 206:
+            headers["Content-Range"] = f"bytes {start}-{end}/{len(data)}"
+        if gzipped:
+            headers["Content-Encoding"] = "gzip"
+        return status, headers, body[:max_body]
+
+    resp.add_callback(resp.GET, url, callback=_callback)
+    return ranges

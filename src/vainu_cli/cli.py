@@ -17,12 +17,17 @@ from typing import Any, TypeVar, cast
 import click
 
 from vainu_cli._async_client import (
-    VainuAPIBaseClient as AsyncBaseClient,
-)
-from vainu_cli._async_client import (
+    AsyncResult,
     VainuAPIKeyClient,
     VainuJWTAPIClient,
     VainuOAuthAPIClient,
+)
+from vainu_cli._async_client import (
+    VainuAPIBaseClient as AsyncBaseClient,
+)
+from vainu_cli._download import Downloader
+from vainu_cli._sync_client import (
+    AsyncResult as SyncAsyncResult,
 )
 from vainu_cli._sync_client import (
     VainuAPIBaseClient as SyncBaseClient,
@@ -44,6 +49,7 @@ from vainu_cli.auth.commands import (
 )
 from vainu_cli.auth.storage import StoredCredentials, TokenStore
 from vainu_cli.common import (
+    CLI_ASYNC_JOB_TYPES,
     DEFAULT_ASYNC_MAX_WAIT_SECONDS,
     DEFAULT_ENCODING,
     DEFAULT_TIMEOUT_SECONDS,
@@ -52,6 +58,7 @@ from vainu_cli.common import (
     RESPONSE_FORMATS,
     SIGNALS_RESPONSE_FORMATS,
     STREAMABLE_FORMATS,
+    AsyncJobState,
     ResponseFormat,
     is_line_safe,
     response_encoding,
@@ -475,6 +482,45 @@ def _option_timeout(func: F) -> F:
     )(func)
 
 
+def _option_download(func: F) -> F:
+    decorated = click.option(
+        "--downloader",
+        type=click.Choice([downloader.value for downloader in Downloader]),
+        default=Downloader.PYTHON.value,
+        show_default=True,
+        help="python: built in, works everywhere. curl: the native curl binary (must be on "
+        "PATH), lowest overhead for huge files. Both resume an interrupted download.",
+    )(func)
+    return click.option(
+        "--keep-gzip",
+        is_flag=True,
+        help="Save the export as stored — gzip-compressed, several times smaller — instead "
+        "of decompressing it. Name the --output file *.gz.",
+    )(decorated)
+
+
+async def _download_export_result(
+    async_result: AsyncResult,
+    *,
+    downloader: str,
+    keep_gzip: bool,
+    output: str,
+) -> str | None:
+    """Downloads a finished export; returns its result_url instead when the result lives there."""
+    try:
+        downloaded = await async_result.download_to_file(
+            output, downloader=Downloader(downloader), keep_gzip=keep_gzip
+        )
+    except RuntimeError as err:
+        if async_result.job_id is None:
+            raise
+        # Re-running the export command would start a new job; the finished one can resume.
+        raise click.ClickException(
+            f"{err} Resume with: vainu async-jobs download {async_result.job_id} --output {output}"
+        ) from err
+    return async_result.result_url if downloaded is False else None
+
+
 # ── Root group ──────────────────────────────────────────────────────────────
 
 
@@ -651,6 +697,7 @@ def companies_search(
 @_option_output(required=True)
 @_option_poll_interval
 @_option_timeout
+@_option_download
 @click.pass_obj
 @_timed_task("companies-async")
 def companies_export(
@@ -663,6 +710,8 @@ def companies_export(
     output: str,
     poll_interval: int,
     timeout: int,
+    downloader: str,
+    keep_gzip: bool,
 ) -> None:
     """Export companies via async job — polls until complete and downloads to file."""
     payload = with_encoding(load_query_or_payload(query, payload_path), fmt, encoding)
@@ -673,8 +722,9 @@ def companies_export(
         client._async_max_wait_seconds = timeout
         try:
             async_result = await client.companies_async(payload=payload, format=fmt)
-            downloaded = await async_result.download_to_file(output)
-            return async_result.result_url if downloaded is False else None
+            return await _download_export_result(
+                async_result, downloader=downloader, keep_gzip=keep_gzip, output=output
+            )
         finally:
             await client.close()
 
@@ -755,6 +805,7 @@ def organizations_search(
 @_option_output(required=True)
 @_option_poll_interval
 @_option_timeout
+@_option_download
 @click.pass_obj
 @_timed_task("organizations-async")
 def organizations_export(
@@ -766,6 +817,8 @@ def organizations_export(
     output: str,
     poll_interval: int,
     timeout: int,
+    downloader: str,
+    keep_gzip: bool,
 ) -> None:
     """Export organizations via async job — polls until complete and downloads to file."""
     payload = with_encoding(load_payload(payload_path), fmt, encoding)
@@ -776,8 +829,9 @@ def organizations_export(
         client._async_max_wait_seconds = timeout
         try:
             async_result = await client.organizations_async(payload=payload, format=fmt)
-            downloaded = await async_result.download_to_file(output)
-            return async_result.result_url if downloaded is False else None
+            return await _download_export_result(
+                async_result, downloader=downloader, keep_gzip=keep_gzip, output=output
+            )
         finally:
             await client.close()
 
@@ -1116,6 +1170,173 @@ def organizations_count_cmd(
     _write_output(result, output)
     if isinstance(result, dict) and result.get("status") == "error":
         raise click.ClickException("The API reported status 'error' for this count.")
+
+
+# ── async jobs ───────────────────────────────────────────────────────────────
+
+_ASYNC_JOBS_AUTH_HINT = (
+    "Listing async jobs needs a logged-in user (`vainu login`); "
+    "the API does not accept an API key for it."
+)
+
+
+@main.group("async-jobs", invoke_without_command=True)
+@click.option(
+    "--type",
+    "types",
+    multiple=True,
+    type=click.Choice(sorted(CLI_ASYNC_JOB_TYPES)),
+    help="Only jobs started by this command (companies-async / organizations-async). "
+    "Repeatable.  [default: both]",
+)
+@click.option(
+    "--state",
+    "states",
+    multiple=True,
+    type=click.Choice([state.value for state in AsyncJobState]),
+    help="Only jobs in this state. Repeatable.  [default: any]",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(1, 1000),
+    default=10,
+    show_default=True,
+    help="Max jobs to return, newest first.",
+)
+@_option_output(required=False)
+@click.pass_context
+@_timed_task("async-jobs")
+def async_jobs_group(
+    ctx: click.Context,
+    types: tuple[str, ...],
+    states: tuple[str, ...],
+    limit: int,
+    output: str | None,
+) -> None:
+    """List your async export jobs from the last 90 days.
+
+    Only shows the job types this CLI can start, so a job left running after
+    `--timeout` or a lost connection can be found again. Needs `vainu login`
+    (or another bearer-token auth method) — an API key is rejected by the API.
+    `vainu async-jobs download JOB_ID` fetches a finished job's file.
+
+    \b
+    Example:
+        vainu async-jobs --state process
+        vainu async-jobs --type organizations --limit 50
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    config = ctx.obj
+    # Fail before the request: the endpoint only authenticates JWT/session users.
+    if config.auth_method == "apikey":
+        raise click.ClickException(_ASYNC_JOBS_AUTH_HINT)
+
+    job_types = [CLI_ASYNC_JOB_TYPES[name] for name in types or sorted(CLI_ASYNC_JOB_TYPES)]
+    kwargs = {"job_types": job_types, "limit": limit, "states": list(states)}
+    if config.async_mode:
+
+        async def _run() -> list | dict:
+            client = _make_async_client(config)
+            try:
+                return await client.async_jobs(**kwargs)
+            finally:
+                await client.close()
+
+        result = asyncio.run(_run())
+    else:
+        client = _make_sync_client(config)
+        try:
+            result = client.async_jobs(**kwargs)
+        finally:
+            client.close()
+
+    # 403/404 come back as an error body instead of raising (`_raise_for_status_with_body`).
+    if not isinstance(result, list):
+        raise click.ClickException(f"{_ASYNC_JOBS_AUTH_HINT} API response: {json.dumps(result)}")
+    _write_output(result, output)
+
+
+# Most real jobs are organizations exports, so try that type first.
+_DOWNLOAD_JOB_TYPE_ORDER = ("organizations", "companies")
+
+
+def _download_link(*, body: dict, job_id: str) -> str:
+    """Returns the job's download link; raises when the job cannot be downloaded."""
+    # A 403/404 error body has no `state` (`_raise_for_status_with_body` returns it).
+    if "state" not in body:
+        raise click.ClickException(
+            f"No companies-async or organizations-async job `{job_id}` found: {json.dumps(body)}"
+        )
+    if body["state"] != AsyncJobState.COMPLETED:
+        raise click.ClickException(f"Job `{job_id}` is `{body['state']}`, nothing to download yet.")
+    if not body.get("download_link"):
+        raise click.ClickException(f"Job `{job_id}` is completed but has no download link.")
+    return body["download_link"]
+
+
+@async_jobs_group.command("download")
+@click.argument("job_id")
+@_option_output(required=True)
+@_option_download
+@click.pass_obj
+@_timed_task("async-jobs-download")
+def async_jobs_download(
+    config: Config,
+    job_id: str,
+    output: str,
+    downloader: str,
+    keep_gzip: bool,
+) -> None:
+    """Download the result file of a finished async export job.
+
+    The job type is detected automatically; a wrong guess costs one extra
+    request (and a logged 404). Works with an API key too. An interrupted
+    download is kept as `<output>.<etag>.part`; re-run the same command to
+    resume it.
+
+    \b
+    Example:
+        vainu async-jobs download 6ae47e3305a0c8094ef8c4e5 --output export.jsonl
+    """
+    job_types = [CLI_ASYNC_JOB_TYPES[name] for name in _DOWNLOAD_JOB_TYPE_ORDER]
+    try:
+        if config.async_mode:
+
+            async def _run() -> None:
+                client = _make_async_client(config)
+                try:
+                    for job_type in job_types:
+                        body = await client.async_job(job_id=job_id, job_type=job_type)
+                        if "state" in body:
+                            break
+                    link = _download_link(body=body, job_id=job_id)
+                    result = AsyncResult(download_url=link, duration=body.get("duration"))
+                    await result.download_to_file(
+                        output, downloader=Downloader(downloader), keep_gzip=keep_gzip
+                    )
+                finally:
+                    await client.close()
+
+            asyncio.run(_run())
+        else:
+            client = _make_sync_client(config)
+            try:
+                for job_type in job_types:
+                    body = client.async_job(job_id=job_id, job_type=job_type)
+                    if "state" in body:
+                        break
+                link = _download_link(body=body, job_id=job_id)
+                result = SyncAsyncResult(download_url=link, duration=body.get("duration"))
+                result.download_to_file(
+                    output, downloader=Downloader(downloader), keep_gzip=keep_gzip
+                )
+            finally:
+                client.close()
+    except RuntimeError as err:
+        # The download keeps its `.part` file, so the same command picks up where it stopped.
+        raise click.ClickException(f"{err} Re-run the same command to continue.") from err
+    click.echo(f"Export saved to {output}", err=True)
 
 
 # ── enrichment agent ─────────────────────────────────────────────────────────

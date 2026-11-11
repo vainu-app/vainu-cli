@@ -4,9 +4,9 @@ import enum
 import http
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Literal, Protocol, TypeAlias
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +253,23 @@ class AsyncJobState(enum.StrEnum):
     PARTIAL_FAILURE_INCOMPLETE = "partial_failure_incomplete"
     PROCESS = "process"
     STOPPED = "stopped"
+
+
+# `UserAsyncProcess.type` the backend records for each async command this CLI can
+# start: the v2 view's `view_name` or the v3 viewset's `basename` + "-async-api".
+CLI_ASYNC_JOB_TYPES: dict[str, str] = {
+    "companies": "public-companies-async-api",
+    "organizations": "list-organizations-async-api",
+}
+
+
+def async_jobs_path(*, job_types: Iterable[str], limit: int, states: Iterable[str]) -> str:
+    """Returns the path listing the user's async jobs of the given types and states."""
+    query = urlencode(
+        {"type": list(job_types), "state": list(states), "limit": limit},
+        doseq=True,
+    )
+    return f"/poll_async_processes/?{query}"
 
 
 # The count endpoint reports progress under its own `status` vocabulary —

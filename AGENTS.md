@@ -93,6 +93,8 @@ carries detailed CLI instructions (VQL, signals, exports).
 | Look a company up by name / domain | `vainu organizations-search --search ...` |
 | Bulk async export to JSONL/CSV | `vainu organizations-async` / `companies-async` |
 | How many companies match a query | `vainu organizations-count --payload ...` |
+| Find async exports still running or finished | `vainu async-jobs --state process` (needs `vainu login`) |
+| Download a finished async export later | `vainu async-jobs download JOB_ID --output file.jsonl` |
 | Shell pipes (`\| jq`, `\| grep`) | CLI with `--format jsonl` |
 | CI / cron automation | CLI or Python library |
 | Custom Python integration | `from vainu_cli import VainuAPIKeyClient` |
