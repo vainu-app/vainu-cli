@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "recipe": "News signals by signal type (tags) and company country",
+    "source_url": "https://developers.vainu.com/v3/docs/signals-api",
+    "endpoint": "POST https://api.vainu.io/api/v3/signals/news/",
+    "note": "Funding signals linked to companies in Finland or Sweden from the last 30 days. organizations.country is the linked company's country and takes uppercase codes only ('se' matches nothing). countries is the news item's source country, not the company's."
+  },
+  "query": {
+    "?ALL": [
+      { "?IN": { "tags": [43543] } },
+      { "?IN": { "organizations.country": ["FI", "SE"] } },
+      { "?GTE": { "vainu_date": "30 days ago" } }
+    ]
+  },
+  "limit": 100
+}

@@ -16,7 +16,7 @@ vainu --auth-method oauth signals-news --payload payload.json
 {
   "query": {
     "?ALL": [
-      { "?IN": { "business_ids": ["FI25578642"] } },
+      { "?IN": { "organizations.business_id": ["FI25578642"] } },
       { "?GTE": { "vainu_date": "1 years ago" } }
     ]
   },
@@ -39,7 +39,7 @@ vainu --auth-method oauth signals-news --payload payload.json
 
 ## News signals (`signals-news`)
 
-Filterable fields: `content`, `title`, `link`, `type`, `countries`, `tags`, `vainu_date`, `business_ids`.
+Filterable fields: `content`, `title`, `link`, `type`, `countries`, `organizations.business_id`, `organizations.country`, `tags`, `vainu_date`.
 
 ```bash
 vainu signals-news --payload "$(vainu examples path 01-news-signals-for-one-company)"
@@ -53,7 +53,7 @@ vainu signals-news --payload "$(vainu examples path 04-news-signals-keyword-moni
 
 ## Data-change signals (`signals-data-changes`)
 
-Filterable fields: `tags`, `vainu_date`, `business_ids`, `prospects` only — no text/content filters.
+Filterable fields: `tags`, `vainu_date`, `organizations.business_id`, `organizations.country`, `prospects` only — no text/content filters, and `countries` is ignored.
 
 ```bash
 vainu signals-data-changes --payload "$(vainu examples path 05-data-changes-for-companies)"
@@ -62,7 +62,8 @@ vainu signals-data-changes --payload "$(vainu examples path 05-data-changes-for-
 ## Rules and pitfalls
 
 - **Relative dates need plural units**: `"30 days ago"` and `"1 years ago"` work; `"1 year ago"` returns 400
-- **`business_ids`**: country-prefixed (`FI25578642`), `?IN` operator only
+- **`organizations.business_id`**: country-prefixed (`FI25578642`), `?IN` or `?EQ`. Prefer it over the older `business_ids` field, which takes `?IN` only. An unprefixed id returns 400
+- **Company country vs source country**: `organizations.country` filters by the linked company's country; `countries` is the news item's source country. Use uppercase codes (`"FI"`) — `"fi"` silently matches nothing
 - **Tag IDs**: integer `tags` values — see [TAGS_BY_TYPE.json](https://filter.vainu.io/filtervalues/en/TAGS_BY_TYPE.json) or bundled `02-news-signals-by-tags`
 - **No CSV** — use `--format jsonl` for exports
 - **`csv` is not available** on signals endpoints
@@ -92,3 +93,4 @@ Run `vainu examples list --category signals_api` for the full list.
 | `04-news-signals-keyword-monitor` | Keyword search in date window |
 | `05-data-changes-for-companies` | Financial statements + CEO changes |
 | `06-data-changes-jsonl-paging` | JSONL export with paging |
+| `07-news-signals-by-tag-and-country` | Funding signals for FI/SE companies, last 30 days |
