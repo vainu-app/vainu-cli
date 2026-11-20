@@ -601,9 +601,13 @@ Payload keys: `query` (required — see the
   [`TAGS_BY_TYPE.json`](https://filter.vainu.io/filtervalues/en/TAGS_BY_TYPE.json).
 - Relative dates need **plural** units: `"30 days ago"` and `"1 years ago"` work, `"1 year ago"`
   returns 400.
-- News signals can be filtered by `content`, `title`, `link`, `type` and `countries`;
-  data-change signals only by `tags`, `vainu_date`, `business_ids` and `prospects`.
-- `business_ids` takes country-prefixed ids (`FI25578642`) and supports `?IN` only.
+- News signals can be filtered by `content`, `title`, `link`, `type`, `countries`,
+  `organizations.business_id` and `organizations.country`; data-change signals only by `tags`,
+  `vainu_date`, `organizations.business_id`, `organizations.country` and `prospects`.
+- `organizations.country` is the linked company's country; `countries` is the news item's source
+  country. Country codes are uppercase — `"fi"` silently matches nothing.
+- `organizations.business_id` takes country-prefixed ids (`FI25578642`) with `?IN` or `?EQ`.
+  Prefer it over the older `business_ids` field, which supports `?IN` only.
 - An empty array means "nothing matched" *or* "the query timed out", and an unknown field name
   is ignored rather than rejected — so always include a date bound and check field spelling
   when a result looks too large or too empty.
@@ -802,8 +806,9 @@ Each file is a complete POST body — `query`, `limit`, `offset` at the top leve
 | [`02-news-signals-by-tags.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/02-news-signals-by-tags.json) | Funding + M&A by signal type id | Values inside one `?IN` are OR-ed |
 | [`03-news-signals-excluding-tags.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/03-news-signals-excluding-tags.json) | Excluding a noisy type, keeping only tagged signals | `?NOT` alone also lets untagged signals through, hence `?EXISTS` |
 | [`04-news-signals-keyword-monitor.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/04-news-signals-keyword-monitor.json) | Keyword search over signal content in a date window | News only; matching starts at word boundaries |
-| [`05-data-changes-for-companies.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/05-data-changes-for-companies.json) | New financial statements and CEO changes for two companies | Data changes have no `countries` field and no text filtering |
+| [`05-data-changes-for-companies.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/05-data-changes-for-companies.json) | New financial statements and CEO changes for two companies | Data changes ignore `countries` and have no text filtering |
 | [`06-data-changes-jsonl-paging.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/06-data-changes-jsonl-paging.json) | First page of a JSON Lines export | Raise `offset` by `limit` until a page is short |
+| [`07-news-signals-by-tag-and-country.json`](https://github.com/vainu-app/vainu-cli/blob/main/example_payloads/signals_api/07-news-signals-by-tag-and-country.json) | Funding signals for companies in Finland or Sweden, last 30 days | `organizations.country` is the company's country; `countries` is the source's |
 
 ```bash
 export VAINU_CLIENT_ID=your-client-id

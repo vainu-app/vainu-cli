@@ -3,11 +3,11 @@
     "recipe": "News signals for one company",
     "source_url": "https://developers.vainu.com/v3/docs/signals-api",
     "endpoint": "POST https://api.vainu.io/api/v3/signals/news/",
-    "note": "business_ids must be country-prefixed and only supports ?IN. Relative dates need plural units: '1 years ago' works, '1 year ago' returns 400."
+    "note": "organizations.business_id must be country-prefixed (FI25578642); it takes ?IN or ?EQ. Relative dates need plural units: '1 years ago' works, '1 year ago' returns 400."
   },
   "query": {
     "?ALL": [
-      { "?IN": { "business_ids": ["FI25578642"] } },
+      { "?IN": { "organizations.business_id": ["FI25578642"] } },
       { "?GTE": { "vainu_date": "1 years ago" } }
     ]
   },
