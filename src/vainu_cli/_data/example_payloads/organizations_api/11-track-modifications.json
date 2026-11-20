@@ -28,7 +28,7 @@
           }
         ]
       },
-      { "?IN": { "business_ids": ["FI05381340"] } }
+      { "?IN": { "business_id": ["FI05381340"] } }
     ]
   },
   "fields": ["business_id", "name", "founded", "contacts"],
